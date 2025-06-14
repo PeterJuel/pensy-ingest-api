@@ -1,0 +1,33 @@
+{
+  "name": "pensy-api",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "worker": "tsx src/worker/index.ts",
+    "migrate": "dotenv -e .env.local -- sh -c 'psql \"$DATABASE_URL\" -f migrations/001_init.sql'"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "graphile-worker": "^0.16.6",
+    "next": "^15.3.3",
+    "node-fetch": "^2.7.0",
+    "node-html-parser": "^7.0.1",
+    "pg": "^8.16.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.1",
+    "@types/node-fetch": "^2.6.12",
+    "@types/react": "19.1.8",
+    "dotenv-cli": "^8.0.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  }
+}
