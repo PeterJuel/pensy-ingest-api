@@ -22,5 +22,4 @@ Thumbs.db
 *.swp
 
 # Postgres dumps
-*.sql
 *.dump
