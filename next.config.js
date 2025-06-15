@@ -1,12 +1,36 @@
-/** @type {import('next').NextConfig} */
+// next.config.js
+/**
+ * @type {import('next').NextConfig}
+ */
 const nextConfig = {
-  webpack: (config, { isServer }) => {
-    if (isServer) {
-      // silence “Critical dependency” warnings
-      config.module.exprContextCritical = false;
+  webpack(config) {
+    for (const rule of config.module.rules) {
+      if (!rule.oneOf) continue;
+
+      for (const oneOf of rule.oneOf) {
+        const uses = Array.isArray(oneOf.use)
+          ? oneOf.use
+          : oneOf.use
+          ? [oneOf.use]
+          : [];
+
+        for (const useEntry of uses) {
+          if (
+            useEntry &&
+            typeof useEntry === "object" &&
+            useEntry.loader?.includes("css-loader")
+          ) {
+            useEntry.options = {
+              ...useEntry.options,
+              esModule: true,
+            };
+          }
+        }
+      }
     }
+
     return config;
   },
 };
 
-export default nextConfig; // ← ESM export
+export default nextConfig;

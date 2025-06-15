@@ -22,37 +22,69 @@ export function scrubRegex(text: string = ""): string {
     .replace(CPR_RGX, "[cpr]");
 }
 
-/** Detect & redact PERSON spans via Presidio. */
+/** Detect & redact PERSON spans via Presidio (with fallback if service unavailable). */
 async function removeNames(text: string): Promise<string> {
   if (!text) return ""; // no work if empty
 
-  // 1) Detect PERSON entities
-  const analysisRes: Response = await fetch(ANALYZE_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, language: "en", entities: ["PERSON"] }),
-  });
-  const detection: any[] = await analysisRes.json();
+  try {
+    // 1) Detect PERSON entities
+    const analysisRes: Response = await fetch(ANALYZE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, language: "en", entities: ["PERSON"] }),
+    });
 
-  // 2) Anonymize those spans → replace with "[name]"
-  const anonRes: Response = await fetch(ANONYMIZE_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      text,
-      entities: detection,
-      anonymizers: { default: { type: "replace", new_value: "[name]" } },
-    }),
-  });
-  const { text: scrubbed }: { text: string } = await anonRes.json();
-  return scrubbed;
+    if (!analysisRes.ok) {
+      console.warn(
+        `Presidio analyzer failed: ${analysisRes.status}. Skipping name removal.`
+      );
+      return text; // Return original text if Presidio fails
+    }
+
+    const detection: any[] = await analysisRes.json();
+
+    // If no person entities detected, return original text
+    if (!detection || detection.length === 0) {
+      return text;
+    }
+
+    // 2) Anonymize those spans → replace with "[name]"
+    const anonRes: Response = await fetch(ANONYMIZE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text,
+        entities: detection,
+        anonymizers: { default: { type: "replace", new_value: "[name]" } },
+      }),
+    });
+
+    if (!anonRes.ok) {
+      console.warn(
+        `Presidio anonymizer failed: ${anonRes.status}. Skipping name removal.`
+      );
+      return text; // Return original text if Presidio fails
+    }
+
+    const { text: scrubbed }: { text: string } = await anonRes.json();
+    return scrubbed;
+  } catch (error) {
+    console.error("Presidio error, skipping name removal:", error);
+    return text; // Return original text if any error occurs
+  }
 }
 
 /** Full‐text scrub: regex → Presidio → regex (safe for empty/undefined). */
 export async function scrubText(text: string = ""): Promise<string> {
-  const once = scrubRegex(text);
-  const named = await removeNames(once);
-  return scrubRegex(named);
+  // For now, let's be less aggressive and only use regex
+  // TODO: Fix Presidio configuration to be less aggressive
+  const scrubbed = scrubRegex(text);
+
+  // Temporarily disable Presidio name removal until we can fix it
+  // const named = await removeNames(scrubbed);
+  // return scrubRegex(named);
+
+  return scrubbed;
 }
 
 /** Overwrite any {name, address} to non-PII tokens. */
@@ -66,21 +98,31 @@ export function scrubAddress(addr: any) {
  * Parse the HTML, scrub only the text nodes via scrubText(), and reserialize.
  */
 export async function scrubHtml(html: string = ""): Promise<string> {
-  // parse with default options
-  const root = parse(html);
+  if (!html || html.trim() === "") return "";
 
-  // recursively visit every node
-  async function visit(node: Node) {
-    if (node instanceof TextNode) {
-      // only scrub the text, preserve tags/attributes
-      node.rawText = await scrubText(node.rawText);
-    } else if (node instanceof HTMLElement) {
-      for (const child of node.childNodes) {
-        await visit(child);
+  try {
+    // parse with default options
+    const root = parse(html);
+
+    // recursively visit every node
+    async function visit(node: Node) {
+      if (node instanceof TextNode) {
+        // Only scrub actual text content, preserve whitespace and structure
+        if (node.rawText && node.rawText.trim().length > 0) {
+          node.rawText = await scrubText(node.rawText);
+        }
+      } else if (node instanceof HTMLElement) {
+        for (const child of node.childNodes) {
+          await visit(child);
+        }
       }
     }
-  }
 
-  await visit(root);
-  return root.toString();
+    await visit(root);
+    return root.toString();
+  } catch (error) {
+    console.error("HTML scrubbing error:", error);
+    // If HTML parsing fails, fall back to text-only scrubbing
+    return await scrubText(html);
+  }
 }

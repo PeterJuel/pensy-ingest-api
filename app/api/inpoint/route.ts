@@ -92,7 +92,14 @@ export async function POST(req: NextRequest) {
       );
 
       inserted++;
+      console.log(
+        `[ROUTE DEBUG] About to call enqueueEmailProcess for email ID: ${row.id}`
+      );
+
       await enqueueEmailProcess(row.id);
+      console.log(
+        `[ROUTE DEBUG] enqueueEmailProcess call completed for email ID: ${row.id}`
+      );
 
       // Log success
       await query(
