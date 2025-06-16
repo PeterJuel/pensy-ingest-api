@@ -21,7 +21,7 @@ export async function getBoss(): Promise<PgBoss> {
     await boss.start();
     console.log("pg-boss started");
 
-    // Create required queues
+    // Create required queues (simple creation without invalid options)
     await boss.createQueue(JOB_TYPES.PROCESS_EMAIL);
     await boss.createQueue(JOB_TYPES.LLM_BATCH);
     await boss.createQueue(JOB_TYPES.GENERATE_EMBEDDINGS);
@@ -66,8 +66,20 @@ export async function enqueueEmailProcess(
     jobOptions.startAfter = new Date(Date.now() + options.delay * 1000);
   if (options.startAfter) jobOptions.startAfter = options.startAfter;
 
-  await boss.send(JOB_TYPES.PROCESS_EMAIL, { emailId }, jobOptions);
-  console.log(`Enqueued email processing: ${emailId}`);
+  const jobData = { emailId };
+
+  console.log(`[ENQUEUE] About to send job:`, {
+    type: JOB_TYPES.PROCESS_EMAIL,
+    data: jobData,
+    options: jobOptions,
+  });
+
+  const jobId = await boss.send(JOB_TYPES.PROCESS_EMAIL, jobData, jobOptions);
+  console.log(
+    `[ENQUEUE] Enqueued email processing job ${jobId} for email: ${emailId}`
+  );
+
+  return jobId;
 }
 
 /**
@@ -98,37 +110,55 @@ export async function enqueueLLMBatch(
 export async function startWorker() {
   const boss = await getBoss();
 
-  // Register job handlers
+  // Register job handlers with concurrency settings
   await boss.work(
     JOB_TYPES.PROCESS_EMAIL,
+    {
+      teamSize: 5, // Process up to 5 jobs concurrently
+      teamConcurrency: 1, // Each worker handles 1 job at a time
+    },
     async (job) => {
       // Handle both single job and array cases
       const jobs = Array.isArray(job) ? job : [job];
 
       for (const singleJob of jobs) {
+        if (!singleJob?.data?.emailId) {
+          console.error(`[Worker ${process.pid}] Invalid job data:`, singleJob);
+          throw new Error(`Invalid job data: ${JSON.stringify(singleJob)}`);
+        }
+
         const { emailId } = singleJob.data as EmailJobPayload;
-        console.log(`Processing email job ${singleJob.id}: ${emailId}`);
+        console.log(
+          `[Worker ${process.pid}] Processing email job ${singleJob.id}: ${emailId}`
+        );
 
         try {
           const { runPipelineSteps } = await import("../pipeline/runner");
           await runPipelineSteps(emailId);
-          console.log(`Email processing completed: ${emailId}`);
+          console.log(
+            `[Worker ${process.pid}] Email processing completed: ${emailId}`
+          );
         } catch (error) {
-          console.error(`Email processing failed: ${emailId}`, error);
+          console.error(
+            `[Worker ${process.pid}] Email processing failed: ${emailId}`,
+            error
+          );
           throw error; // pg-boss handles retries
         }
       }
     }
   );
 
-  await boss.work(JOB_TYPES.LLM_BATCH, async (job) => {
-    // Handle both single job and array cases
-    const jobs = Array.isArray(job) ? job : [job];
-
-    for (const singleJob of jobs) {
-      const payload = singleJob.data as LLMBatchPayload;
+  await boss.work(
+    JOB_TYPES.LLM_BATCH,
+    {
+      teamSize: 3, // Process up to 3 LLM jobs concurrently
+      teamConcurrency: 1,
+    },
+    async (job) => {
+      const payload = job.data as LLMBatchPayload;
       console.log(
-        `Processing LLM batch job ${singleJob.id}: ${payload.operation}`
+        `[Worker ${process.pid}] Processing LLM batch job ${job.id}: ${payload.operation}`
       );
 
       try {
@@ -138,13 +168,18 @@ export async function startWorker() {
         );
         // await processBatchLLM(payload);
       } catch (error) {
-        console.error(`LLM batch processing failed`, error);
+        console.error(
+          `[Worker ${process.pid}] LLM batch processing failed`,
+          error
+        );
         throw error;
       }
     }
-  });
+  );
 
-  console.log("Workers started and listening for jobs");
+  console.log(
+    "Workers started and listening for jobs with concurrency enabled"
+  );
 }
 
 /**
