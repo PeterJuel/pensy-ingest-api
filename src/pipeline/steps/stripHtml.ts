@@ -1,5 +1,5 @@
 // src/pipeline/steps/stripHtml.ts
-import { parse } from "node-html-parser";
+import { parse, HTMLElement, TextNode, Node } from "node-html-parser";
 import { query } from "../../lib/db";
 
 interface Email {
@@ -10,26 +10,35 @@ interface Email {
 }
 
 /**
- * Convert HTML content to plain text
+ * Convert HTML content to plain text, preserving spacing between elements.
  */
 function htmlToText(html: string): string {
   if (!html || html.trim() === "") {
     return "";
   }
 
-  const root = parse(html);
+  // Normalize line breaks and ensure space between adjacent tags
+  const normalized = html
+    // Convert <br> to newline
+    .replace(/<br\s*\/?>/gi, "\n")
+    // Add space between tag boundaries to avoid word concatenation
+    .replace(/>(?=<)/g, "> ");
+
+  const root = parse(normalized);
   let text = root.textContent || "";
 
   text = text
     .replace(/\s+/g, " ") // collapse whitespace
-    .replace(/\n\s*\n/g, "\n\n") // preserve paragraph breaks
+    .replace(/\n\s*/g, "\n") // normalize newlines
+    .replace(/\n\n+/g, "\n\n") // preserve paragraph breaks
     .trim();
 
   return text;
 }
 
 /**
- * Pipeline step: Strip HTML from email body and store as plain_text output
+ * Pipeline step: Strip HTML (including comments) and standard confidentiality notice from email body,
+ * then store as plain_text output.
  */
 export async function stripHtml(email: Email): Promise<void> {
   const startTime = Date.now();
@@ -49,23 +58,18 @@ export async function stripHtml(email: Email): Promise<void> {
       contentSource = "body.body.content";
     }
 
-    const originalLength = htmlContent.length;
-    console.log(
-      `[stripHtml] Email ${email.id}: content source = ${contentSource}`
-    );
-    console.log(
-      `[stripHtml] Email ${email.id}: original content length = ${originalLength}`
-    );
-    console.log(`[stripHtml] Content preview:`, htmlContent.substring(0, 200));
+    // Remove HTML comments
+    htmlContent = htmlContent.replace(/<!--[\s\S]*?-->/g, "");
 
-    // Perform the HTML→text conversion
-    const plainText = htmlToText(htmlContent);
-    const strippedLength = plainText.length;
+    // Convert to plain text with spacing fixes
+    const rawText = htmlToText(htmlContent);
+    // Remove standard confidentiality notice if present
+    const cleanedText = rawText
+      .replace(/Please note that this message[\s\S]*/i, "")
+      .trim();
 
-    console.log(
-      `[stripHtml] Email ${email.id}: stripped length = ${strippedLength}`
-    );
-    console.log(`[stripHtml] Plain text preview:`, plainText.substring(0, 200));
+    const originalLength = rawText.length;
+    const finalLength = cleanedText.length;
 
     // Upsert into email_outputs
     await query(
@@ -83,13 +87,13 @@ export async function stripHtml(email: Email): Promise<void> {
       [
         email.id,
         "plain_text",
-        { text: plainText },
+        { text: cleanedText },
         {
           original_length: originalLength,
-          stripped_length: strippedLength,
+          stripped_length: finalLength,
           processing_time_ms: Date.now() - startTime,
           compression_ratio:
-            originalLength > 0 ? strippedLength / originalLength : 0,
+            originalLength > 0 ? finalLength / originalLength : 0,
           content_source: contentSource,
         },
         "v1",
@@ -108,15 +112,11 @@ export async function stripHtml(email: Email): Promise<void> {
         "ok",
         {
           original_length: originalLength,
-          stripped_length: strippedLength,
+          stripped_length: finalLength,
           processing_time_ms: Date.now() - startTime,
           content_source: contentSource,
         },
       ]
-    );
-
-    console.log(
-      `HTML stripped for email ${email.id}: ${originalLength} → ${strippedLength} chars`
     );
   } catch (error) {
     // On error, log failure and rethrow
