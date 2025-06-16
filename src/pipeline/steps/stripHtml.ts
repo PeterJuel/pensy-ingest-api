@@ -1,13 +1,7 @@
-// src/pipeline/steps/stripHtml.ts
+// src/pipeline/steps/stripHtml.ts - Updated for new interface
 import { parse, HTMLElement, TextNode, Node } from "node-html-parser";
 import { query } from "../../lib/db";
-
-interface Email {
-  id: string;
-  subject: string;
-  body: any;
-  conversation_id: string | null;
-}
+import { Email } from "../types";
 
 /**
  * Convert HTML content to plain text, preserving spacing between elements.
@@ -39,6 +33,8 @@ function htmlToText(html: string): string {
 /**
  * Pipeline step: Strip HTML (including comments) and standard boilerplate from email body,
  * then store as plain_text output.
+ *
+ * This function is now compatible with the PipelineStep interface.
  */
 export async function stripHtml(email: Email): Promise<void> {
   const startTime = Date.now();
@@ -56,6 +52,10 @@ export async function stripHtml(email: Email): Promise<void> {
       );
       htmlContent = (email.body as any).body.content;
       contentSource = "body.body.content";
+    }
+
+    if (!htmlContent) {
+      throw new Error(`No HTML content found in email ${email.id}`);
     }
 
     // Remove HTML comments
@@ -106,41 +106,12 @@ export async function stripHtml(email: Email): Promise<void> {
       ]
     );
 
-    // Log this step
-    await query(
-      `
-      INSERT INTO pipeline_logs (email_id, step, status, details)
-      VALUES ($1, $2, $3, $4)
-      `,
-      [
-        email.id,
-        "strip_html",
-        "ok",
-        {
-          original_length: originalLength,
-          stripped_length: finalLength,
-          processing_time_ms: Date.now() - startTime,
-          content_source: contentSource,
-        },
-      ]
+    console.log(
+      `stripHtml completed for email ${email.id}: ${originalLength} -> ${finalLength} chars`
     );
   } catch (error) {
-    // On error, log failure and rethrow
-    await query(
-      `
-      INSERT INTO pipeline_logs (email_id, step, status, details)
-      VALUES ($1, $2, $3, $4)
-      `,
-      [
-        email.id,
-        "strip_html",
-        "error",
-        {
-          error: error instanceof Error ? error.message : String(error),
-          processing_time_ms: Date.now() - startTime,
-        },
-      ]
-    );
+    // Error logging is now handled by the orchestrator
+    console.error(`stripHtml failed for email ${email.id}:`, error);
     throw error;
   }
 }

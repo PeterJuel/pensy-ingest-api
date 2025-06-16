@@ -61,14 +61,3 @@ CREATE INDEX IF NOT EXISTS pipeline_logs_email_id_idx
 
 -- ──────────────────  Graphile Worker Schema  ────────────────
 CREATE SCHEMA IF NOT EXISTS graphile_worker;
-
--- For pipeline step filtering and analytics
-CREATE INDEX CONCURRENTLY email_outputs_created_at_idx 
-  ON email_outputs (created_at);
-
-CREATE INDEX CONCURRENTLY pipeline_logs_step_status_idx 
-  ON pipeline_logs (step, status);
-
--- For conversation threading queries
-CREATE INDEX CONCURRENTLY emails_conversation_received_idx 
-  ON emails (conversation_id, received_at);

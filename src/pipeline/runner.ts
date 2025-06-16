@@ -1,34 +1,38 @@
-import { query } from "../lib/db";
-import { stripHtml } from "./steps/stripHtml";
+// src/pipeline/runner.ts - Updated to use orchestrator
+import { orchestrator } from "./registry";
 
-interface Email {
-  id: string;
-  subject: string;
-  body: any;
-  conversation_id: string | null;
+export async function runPipelineSteps(
+  emailId: string,
+  requestedSteps?: string[]
+) {
+  try {
+    const context = await orchestrator.executeSteps(emailId, requestedSteps);
+
+    if (context.failedSteps.size > 0) {
+      console.warn(
+        `Pipeline completed with ${context.failedSteps.size} failed steps for email ${emailId}:`,
+        Array.from(context.failedSteps)
+      );
+    }
+
+    return context;
+  } catch (error) {
+    console.error(`Pipeline execution failed for email ${emailId}:`, error);
+    throw error;
+  }
 }
 
-export async function runPipelineSteps(emailId: string) {
-  // Load the email
-  const [email] = await query<Email>(
-    `SELECT id, subject, body, conversation_id FROM emails WHERE id = $1`,
-    [emailId]
-  );
+// Convenience function to run all steps
+export async function runAllSteps(emailId: string) {
+  return orchestrator.executeAll(emailId);
+}
 
-  if (!email) {
-    throw new Error(`Email not found: ${emailId}`);
-  }
+// Function to run specific steps (useful for admin actions)
+export async function runSpecificSteps(emailId: string, stepNames: string[]) {
+  return orchestrator.executeSteps(emailId, stepNames);
+}
 
-  console.log(`Running pipeline for email ${emailId}`);
-
-  // Step 1: Strip HTML to get plain text
-  await stripHtml(email);
-
-  // Future steps will go here:
-  // await chunkText(email);
-  // await generateSummary(email);
-  // await categorizeEmail(email);
-  // etc.
-
-  console.log(`Pipeline completed for email ${emailId}`);
+// Function to get pipeline stats
+export async function getPipelineStats(emailId?: string) {
+  return orchestrator.getExecutionStats(emailId);
 }
