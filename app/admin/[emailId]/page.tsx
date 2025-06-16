@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { query } from "@lib/db";
 import JsonModal from "@/components/JsonModal";
-import { stripHtml } from "../../../src/pipeline/steps/stripHtml";
+import { enqueueEmailProcess } from "../../../src/lib/jobQueue";
 
 /**
  * Server Action: re-run strip_html for this email
@@ -12,19 +12,8 @@ export async function reprocessStripHtml(formData: FormData) {
   "use server";
   const emailId = formData.get("emailId") as string;
   if (!emailId) return;
-  const [email] = await query<{
-    id: string;
-    subject: string;
-    body: any;
-    conversation_id: string | null;
-    received_at: string;
-  }>(
-    `SELECT id, subject, body, conversation_id, received_at
-       FROM emails WHERE id = $1`,
-    [emailId]
-  );
-  if (!email) throw new Error("Email not found");
-  await stripHtml(email);
+
+  await enqueueEmailProcess(emailId, { priority: 5 }); // ✅ Add job to queue
 }
 
 /**
@@ -138,13 +127,30 @@ export default async function EmailDetail({ params }: Props) {
         {email.meta?.hasAttachments ? "Yes" : "No"}
       </p>
 
-      {/* Clean up logs button */}
-      <form action={cleanUpLogs} className="mb-6">
-        <input type="hidden" name="emailId" value={email.id} />
-        <button type="submit" className="btn btn-sm btn-warning">
-          Clean up logs
-        </button>
-      </form>
+      {/* Action buttons section */}
+      <section className="mb-8 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+        <h2 className="text-lg font-semibold mb-4">Actions</h2>
+        <div className="flex flex-wrap gap-3">
+          {/* View Body Button */}
+          <JsonModal body={email.body} modalId={`body-modal-${email.id}`} />
+
+          {/* Re-run strip_html Button */}
+          <form action={reprocessStripHtml} className="inline">
+            <input type="hidden" name="emailId" value={email.id} />
+            <button type="submit" className="btn btn-sm btn-secondary">
+              Re-run strip_html
+            </button>
+          </form>
+
+          {/* Clean up logs button */}
+          <form action={cleanUpLogs} className="inline">
+            <input type="hidden" name="emailId" value={email.id} />
+            <button type="submit" className="btn btn-sm btn-warning">
+              Clean up logs
+            </button>
+          </form>
+        </div>
+      </section>
 
       {/* Pipeline Logs */}
       <section className="mb-8">
@@ -156,7 +162,6 @@ export default async function EmailDetail({ params }: Props) {
               <th className="border-b px-3 py-2 text-left">Step</th>
               <th className="border-b px-3 py-2 text-left">Status</th>
               <th className="border-b px-3 py-2 text-left">Details</th>
-              <th className="border-b px-3 py-2 text-left">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -168,29 +173,9 @@ export default async function EmailDetail({ params }: Props) {
                 <td className="border-b px-3 py-2">{log.step}</td>
                 <td className="border-b px-3 py-2">{log.status}</td>
                 <td className="border-b px-3 py-2">
-                  {log.step === "inpoint" ? (
-                    <JsonModal
-                      body={email.body}
-                      modalId={`body-modal-${log.id}`}
-                    />
-                  ) : (
-                    <pre className="whitespace-pre-wrap text-xs">
-                      {JSON.stringify(log.details, null, 2)}
-                    </pre>
-                  )}
-                </td>
-                <td className="border-b px-3 py-2">
-                  {log.step === "strip_html" && (
-                    <form action={reprocessStripHtml} className="inline">
-                      <input type="hidden" name="emailId" value={email.id} />
-                      <button
-                        type="submit"
-                        className="btn btn-sm btn-secondary"
-                      >
-                        Re-run strip_html
-                      </button>
-                    </form>
-                  )}
+                  <pre className="whitespace-pre-wrap text-xs">
+                    {JSON.stringify(log.details, null, 2)}
+                  </pre>
                 </td>
               </tr>
             ))}
