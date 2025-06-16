@@ -5,82 +5,97 @@ import { query } from "@lib/db";
 import JsonModal from "@/components/JsonModal";
 import { stripHtml } from "../../../src/pipeline/steps/stripHtml";
 
-type Email = {
-  id: string;
-  subject: string | null;
-  meta: any;
-  body: any;
-};
-
-type PipelineLog = {
-  id: string;
-  step: string;
-  status: string;
-  details: any;
-  ts: string;
-};
-
-type EmailOutput = {
-  id: string;
-  output_type: string;
-  content: any;
-  metadata: any;
-  created_at: string;
-};
-
-interface Props {
-  params: { emailId: string };
-}
-
-// Server Action to re-run strip_html
+/**
+ * Server Action for re-running strip_html on demand
+ */
 export async function reprocessStripHtml(formData: FormData) {
   "use server";
   const emailId = formData.get("emailId") as string;
   if (!emailId) return;
 
-  // Load fields needed by stripHtml
+  // Load minimal fields needed for stripHtml
   const [email] = await query<{
     id: string;
     subject: string;
     body: any;
     conversation_id: string | null;
+    received_at: string;
   }>(
-    `SELECT id, subject, body, conversation_id
-       FROM emails
-      WHERE id = $1`,
+    `SELECT id, subject, body, conversation_id, received_at
+       FROM emails WHERE id = $1`,
     [emailId]
   );
   if (!email) throw new Error("Email not found");
 
-  // Re-run the stripHtml step
+  // Re-run strip_html step
   await stripHtml(email);
+}
+
+interface Email {
+  id: string;
+  subject: string | null;
+  meta: any;
+  body: any;
+  received_at: string;
+}
+
+interface PipelineLog {
+  id: string;
+  step: string;
+  status: string;
+  details: any;
+  ts: string;
+}
+
+interface EmailOutput {
+  id: string;
+  output_type: string;
+  content: any;
+  metadata: any;
+  created_at: string;
+}
+
+interface ThreadMsg {
+  id: string;
+  subject: string | null;
+  received_at: string;
+}
+
+interface Props {
+  params: { emailId: string };
 }
 
 export default async function EmailDetail({ params }: Props) {
   const { emailId } = await params;
 
-  // Load email
+  // Load main email
   const [email] = await query<Email>(
-    `SELECT id, subject, meta, body FROM emails WHERE id = $1`,
+    `SELECT id, subject, meta, body, received_at
+       FROM emails WHERE id = $1`,
     [emailId]
   );
   if (!email) return notFound();
 
-  // Load logs
+  // Load pipeline logs
   const logs = await query<PipelineLog>(
     `SELECT id, step, status, details, ts
-       FROM pipeline_logs
-      WHERE email_id = $1
-      ORDER BY ts`,
+       FROM pipeline_logs WHERE email_id = $1 ORDER BY ts`,
     [emailId]
   );
 
   // Load outputs
   const outputs = await query<EmailOutput>(
     `SELECT id, output_type, content, metadata, created_at
-       FROM email_outputs
-      WHERE email_id = $1
-      ORDER BY created_at`,
+       FROM email_outputs WHERE email_id = $1 ORDER BY created_at`,
+    [emailId]
+  );
+
+  // Load thread messages
+  const thread = await query<ThreadMsg>(
+    `SELECT id, subject, received_at
+       FROM emails WHERE conversation_id = (
+         SELECT conversation_id FROM emails WHERE id = $1
+       ) ORDER BY received_at`,
     [emailId]
   );
 
@@ -97,6 +112,7 @@ export default async function EmailDetail({ params }: Props) {
         <strong>Subject:</strong> {email.subject ?? "(no subject)"}
       </p>
 
+      {/* Pipeline Logs */}
       <section className="mb-8">
         <h2 className="text-xl font-semibold mb-2">Pipeline Logs</h2>
         <table className="min-w-full border-collapse">
@@ -131,7 +147,7 @@ export default async function EmailDetail({ params }: Props) {
                 </td>
                 <td className="border-b px-3 py-2">
                   {log.step === "strip_html" && (
-                    <form action={reprocessStripHtml}>
+                    <form action={reprocessStripHtml} className="inline">
                       <input type="hidden" name="emailId" value={email.id} />
                       <button
                         type="submit"
@@ -148,7 +164,8 @@ export default async function EmailDetail({ params }: Props) {
         </table>
       </section>
 
-      <section>
+      {/* Email Outputs */}
+      <section className="mb-8">
         <h2 className="text-xl font-semibold mb-2">Email Outputs</h2>
         <table className="min-w-full border-collapse">
           <thead>
@@ -180,6 +197,32 @@ export default async function EmailDetail({ params }: Props) {
             ))}
           </tbody>
         </table>
+      </section>
+
+      {/* Conversation Thread */}
+      <section className="mt-12">
+        <h2 className="text-xl font-semibold mb-2">Conversation Thread</h2>
+        <ul className="space-y-2">
+          {thread.map((msg) => (
+            <li key={msg.id}>
+              <Link
+                href={`/admin/${msg.id}`}
+                className={`block p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800 ${
+                  msg.id === email.id
+                    ? "bg-blue-100 dark:bg-blue-900 font-semibold"
+                    : ""
+                }`}
+              >
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-600">
+                    {new Date(msg.received_at).toLocaleString("da-DK")}
+                  </span>
+                  <span>{msg.subject ?? "(no subject)"}</span>
+                </div>
+              </Link>
+            </li>
+          ))}
+        </ul>
       </section>
     </div>
   );

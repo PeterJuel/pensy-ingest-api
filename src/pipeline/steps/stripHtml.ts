@@ -37,7 +37,7 @@ function htmlToText(html: string): string {
 }
 
 /**
- * Pipeline step: Strip HTML (including comments) and standard confidentiality notice from email body,
+ * Pipeline step: Strip HTML (including comments) and standard boilerplate from email body,
  * then store as plain_text output.
  */
 export async function stripHtml(email: Email): Promise<void> {
@@ -63,8 +63,14 @@ export async function stripHtml(email: Email): Promise<void> {
 
     // Convert to plain text with spacing fixes
     const rawText = htmlToText(htmlContent);
-    // Remove standard confidentiality notice if present
-    const cleanedText = rawText
+
+    // Remove common boilerplate: sender warning
+    let cleanedText = rawText
+      .replace(
+        /You don't often get email from[\s\S]*?Learn why this is important\s*/i,
+        ""
+      )
+      // Remove standard confidentiality notice if present
       .replace(/Please note that this message[\s\S]*/i, "")
       .trim();
 
