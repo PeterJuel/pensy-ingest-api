@@ -1,6 +1,6 @@
 // app/api/queue/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { getBoss, getQueueStats, cancelJob } from "@lib/jobQueue";
+import { getBoss, getQueueStats, cancelJob, JOB_TYPES } from "@lib/jobQueue";
 import { query as dbQuery } from "@lib/db";
 
 // GET /api/queue - View queue status
@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
           params.push(state);
         }
 
-        query += ` ORDER BY created_on DESC LIMIT ${params.length + 1}`;
+        query += ` ORDER BY created_on DESC LIMIT $${params.length + 1}`;
         params.push(limit);
 
         const jobs = await dbQuery(query, params);
@@ -96,8 +96,8 @@ export async function POST(req: NextRequest) {
 
       case "retry_failed":
         const jobType = params.jobType;
-        if (jobType) {
-          // Use pg-boss fail() and then send new jobs for failed ones
+        if (jobType && jobType === JOB_TYPES.PROCESS_EMAIL) {
+          // Get failed jobs and create new ones
           const failedJobs = await dbQuery(
             `
             SELECT id, data FROM pgboss.job 
@@ -125,7 +125,7 @@ export async function POST(req: NextRequest) {
           });
         }
         return NextResponse.json(
-          { error: "jobType required" },
+          { error: "Invalid or missing jobType" },
           { status: 400 }
         );
 
