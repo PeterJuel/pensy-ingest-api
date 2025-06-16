@@ -99,24 +99,27 @@ export async function startWorker() {
   const boss = await getBoss();
 
   // Register job handlers
-  await boss.work(JOB_TYPES.PROCESS_EMAIL, async (job) => {
-    // Handle both single job and array cases
-    const jobs = Array.isArray(job) ? job : [job];
+  await boss.work(
+    JOB_TYPES.PROCESS_EMAIL,
+    async (job) => {
+      // Handle both single job and array cases
+      const jobs = Array.isArray(job) ? job : [job];
 
-    for (const singleJob of jobs) {
-      const { emailId } = singleJob.data as EmailJobPayload;
-      console.log(`Processing email job ${singleJob.id}: ${emailId}`);
+      for (const singleJob of jobs) {
+        const { emailId } = singleJob.data as EmailJobPayload;
+        console.log(`Processing email job ${singleJob.id}: ${emailId}`);
 
-      try {
-        const { runPipelineSteps } = await import("../pipeline/runner");
-        await runPipelineSteps(emailId);
-        console.log(`Email processing completed: ${emailId}`);
-      } catch (error) {
-        console.error(`Email processing failed: ${emailId}`, error);
-        throw error; // pg-boss handles retries
+        try {
+          const { runPipelineSteps } = await import("../pipeline/runner");
+          await runPipelineSteps(emailId);
+          console.log(`Email processing completed: ${emailId}`);
+        } catch (error) {
+          console.error(`Email processing failed: ${emailId}`, error);
+          throw error; // pg-boss handles retries
+        }
       }
     }
-  });
+  );
 
   await boss.work(JOB_TYPES.LLM_BATCH, async (job) => {
     // Handle both single job and array cases
