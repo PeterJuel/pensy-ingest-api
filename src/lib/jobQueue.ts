@@ -83,7 +83,7 @@ export async function startWorker() {
   await boss.work(
     JOB_TYPES.PROCESS_EMAIL,
     {
-      batchSize: 5, // Process up to 5 jobs at once
+      batchSize: 20, // Process up to 5 jobs at once
     },
     async (jobs) => {
       // jobs will be an array of 1-5 jobs
@@ -95,8 +95,13 @@ export async function startWorker() {
 
       // Process all jobs in parallel using Promise.all
       await Promise.all(
-        jobArray.map(async (singleJob) => {
-          if (!singleJob?.data?.emailId) {
+        jobArray.map(async (singleJob: any) => {
+          // Type guard to ensure proper structure
+          if (
+            !singleJob?.data ||
+            typeof singleJob.data !== "object" ||
+            !singleJob.data.emailId
+          ) {
             console.error(
               `[Worker ${process.pid}] Invalid job data:`,
               singleJob
@@ -104,7 +109,9 @@ export async function startWorker() {
             throw new Error(`Invalid job data: ${JSON.stringify(singleJob)}`);
           }
 
-          const { emailId } = singleJob.data as EmailJobPayload;
+          const jobData = singleJob.data as EmailJobPayload;
+          const { emailId } = jobData;
+
           console.log(
             `[Worker ${process.pid}] Processing email job ${singleJob.id}: ${emailId}`
           );
