@@ -2,6 +2,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { query } from "@lib/db";
+import JsonModal from "@/components/JsonModal";
+import { stripHtml } from "../../../src/pipeline/steps/stripHtml";
 
 type Email = {
   id: string;
@@ -30,17 +32,41 @@ interface Props {
   params: { emailId: string };
 }
 
-export default async function EmailDetail({ params }: Props) {
-   const { emailId } = await params;
+// Server Action to re-run strip_html
+export async function reprocessStripHtml(formData: FormData) {
+  "use server";
+  const emailId = formData.get("emailId") as string;
+  if (!emailId) return;
 
-  // Load email row
+  // Load fields needed by stripHtml
+  const [email] = await query<{
+    id: string;
+    subject: string;
+    body: any;
+    conversation_id: string | null;
+  }>(
+    `SELECT id, subject, body, conversation_id
+       FROM emails
+      WHERE id = $1`,
+    [emailId]
+  );
+  if (!email) throw new Error("Email not found");
+
+  // Re-run the stripHtml step
+  await stripHtml(email);
+}
+
+export default async function EmailDetail({ params }: Props) {
+  const { emailId } = await params;
+
+  // Load email
   const [email] = await query<Email>(
     `SELECT id, subject, meta, body FROM emails WHERE id = $1`,
     [emailId]
   );
   if (!email) return notFound();
 
-  // Load pipeline logs
+  // Load logs
   const logs = await query<PipelineLog>(
     `SELECT id, step, status, details, ts
        FROM pipeline_logs
@@ -80,6 +106,7 @@ export default async function EmailDetail({ params }: Props) {
               <th className="border-b px-3 py-2 text-left">Step</th>
               <th className="border-b px-3 py-2 text-left">Status</th>
               <th className="border-b px-3 py-2 text-left">Details</th>
+              <th className="border-b px-3 py-2 text-left">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -91,9 +118,29 @@ export default async function EmailDetail({ params }: Props) {
                 <td className="border-b px-3 py-2">{log.step}</td>
                 <td className="border-b px-3 py-2">{log.status}</td>
                 <td className="border-b px-3 py-2">
-                  <pre className="whitespace-pre-wrap text-xs">
-                    {JSON.stringify(log.details, null, 2)}
-                  </pre>
+                  {log.step === "inpoint" ? (
+                    <JsonModal
+                      body={email.body}
+                      modalId={`body-modal-${log.id}`}
+                    />
+                  ) : (
+                    <pre className="whitespace-pre-wrap text-xs">
+                      {JSON.stringify(log.details, null, 2)}
+                    </pre>
+                  )}
+                </td>
+                <td className="border-b px-3 py-2">
+                  {log.step === "strip_html" && (
+                    <form action={reprocessStripHtml}>
+                      <input type="hidden" name="emailId" value={email.id} />
+                      <button
+                        type="submit"
+                        className="btn btn-sm btn-secondary"
+                      >
+                        Re-run strip_html
+                      </button>
+                    </form>
+                  )}
                 </td>
               </tr>
             ))}

@@ -1,6 +1,11 @@
+/** tailwind.config.js */
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: ["./app/**/*.{js,ts,jsx,tsx}", "./components/**/*.{js,ts,jsx,tsx}"],
   theme: { extend: {} },
-  plugins: [],
+  plugins: [require("daisyui")],
+  daisyui: {
+    themes: ["light", "dark"], // optional: enable dark mode
+    darkTheme: "dark",
+  },
 };
