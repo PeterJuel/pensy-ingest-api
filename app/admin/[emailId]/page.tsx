@@ -6,14 +6,12 @@ import JsonModal from "@/components/JsonModal";
 import { stripHtml } from "../../../src/pipeline/steps/stripHtml";
 
 /**
- * Server Action for re-running strip_html on demand
+ * Server Action: re-run strip_html for this email
  */
 export async function reprocessStripHtml(formData: FormData) {
   "use server";
   const emailId = formData.get("emailId") as string;
   if (!emailId) return;
-
-  // Load minimal fields needed for stripHtml
   const [email] = await query<{
     id: string;
     subject: string;
@@ -26,9 +24,32 @@ export async function reprocessStripHtml(formData: FormData) {
     [emailId]
   );
   if (!email) throw new Error("Email not found");
-
-  // Re-run strip_html step
   await stripHtml(email);
+}
+
+/**
+ * Server Action: clean up old pipeline logs for this email, keeping only the latest per step
+ */
+export async function cleanUpLogs(formData: FormData) {
+  "use server";
+  const emailId = formData.get("emailId") as string;
+  if (!emailId) return;
+  // Delete all but the most recent log per step
+  await query(
+    `
+    DELETE FROM pipeline_logs
+    WHERE email_id = $1
+      AND id NOT IN (
+        SELECT id FROM (
+          SELECT DISTINCT ON (step) id
+          FROM pipeline_logs
+          WHERE email_id = $1
+          ORDER BY step, ts DESC
+        ) latest
+      )
+    `,
+    [emailId]
+  );
 }
 
 interface Email {
@@ -68,7 +89,7 @@ interface Props {
 export default async function EmailDetail({ params }: Props) {
   const { emailId } = await params;
 
-  // Load main email
+  // Main email
   const [email] = await query<Email>(
     `SELECT id, subject, meta, body, received_at
        FROM emails WHERE id = $1`,
@@ -76,21 +97,21 @@ export default async function EmailDetail({ params }: Props) {
   );
   if (!email) return notFound();
 
-  // Load pipeline logs
+  // Pipeline logs
   const logs = await query<PipelineLog>(
     `SELECT id, step, status, details, ts
        FROM pipeline_logs WHERE email_id = $1 ORDER BY ts`,
     [emailId]
   );
 
-  // Load outputs
+  // Email outputs
   const outputs = await query<EmailOutput>(
     `SELECT id, output_type, content, metadata, created_at
        FROM email_outputs WHERE email_id = $1 ORDER BY created_at`,
     [emailId]
   );
 
-  // Load thread messages
+  // Conversation thread
   const thread = await query<ThreadMsg>(
     `SELECT id, subject, received_at
        FROM emails WHERE conversation_id = (
@@ -111,6 +132,19 @@ export default async function EmailDetail({ params }: Props) {
       <p className="mb-6">
         <strong>Subject:</strong> {email.subject ?? "(no subject)"}
       </p>
+      {/* Attachment indicator */}
+      <p className="mb-6">
+        <strong>Attachments:</strong>{" "}
+        {email.meta?.hasAttachments ? "Yes" : "No"}
+      </p>
+
+      {/* Clean up logs button */}
+      <form action={cleanUpLogs} className="mb-6">
+        <input type="hidden" name="emailId" value={email.id} />
+        <button type="submit" className="btn btn-sm btn-warning">
+          Clean up logs
+        </button>
+      </form>
 
       {/* Pipeline Logs */}
       <section className="mb-8">
