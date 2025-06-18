@@ -21,15 +21,36 @@ export async function reprocessSteps(formData: FormData) {
   if (!emailId) return;
 
   if (selectedSteps.length === 0) {
-    // If no specific steps selected, re-run all steps
+    // If no specific steps selected, re-run all steps via job queue
     await enqueueEmailProcess(emailId, { priority: 5 });
   } else {
-    // Run specific steps directly (synchronously for immediate feedback)
     try {
+      // Simply run the specific steps - they will always execute now
       await runSpecificSteps(emailId, selectedSteps);
+
+      console.log(
+        `Successfully reprocessed steps [${selectedSteps.join(
+          ", "
+        )}] for email ${emailId}`
+      );
     } catch (error) {
       console.error(`Failed to reprocess steps for ${emailId}:`, error);
-      // Could add user feedback here
+
+      // Log the reprocessing attempt failure
+      await query(
+        `INSERT INTO pipeline_logs (email_id, step, status, details)
+         VALUES ($1, $2, $3, $4)`,
+        [
+          emailId,
+          "reprocess",
+          "error",
+          {
+            error: error instanceof Error ? error.message : String(error),
+            attempted_steps: selectedSteps,
+            timestamp: new Date().toISOString(),
+          },
+        ]
+      );
     }
   }
 }

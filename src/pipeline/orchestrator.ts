@@ -68,19 +68,16 @@ export class PipelineOrchestrator {
       startTime: Date.now(),
     };
 
-    // Get already completed steps from database
-    await this.loadCompletedSteps(context);
-
     // Determine which steps to run
     const stepsToRun = requestedSteps || Array.from(this.steps.keys());
 
-    // Create execution plan with dependency resolution
-    const plan = this.createExecutionPlan(stepsToRun, context.completedSteps);
+    // Create execution plan with dependency resolution (no completion checking)
+    const plan = this.createExecutionPlan(stepsToRun, new Set()); // Always pass empty completed set
 
     console.log(`Execution plan for ${emailId}:`, {
       totalSteps: plan.totalSteps,
       parallelGroups: plan.parallelGroups.length,
-      alreadyCompleted: context.completedSteps.size,
+      requestedSteps: stepsToRun,
     });
 
     // Update processing status
@@ -122,19 +119,13 @@ export class PipelineOrchestrator {
    */
   private createExecutionPlan(
     requestedSteps: string[],
-    completedSteps: Set<string>
+    _completedSteps: Set<string>
   ): ExecutionPlan {
-    // Filter out already completed steps and validate requested steps exist
+    // Validate requested steps exist
     const stepsToRun = requestedSteps.filter((stepName) => {
-      if (completedSteps.has(stepName)) {
-        console.log(`Skipping already completed step: ${stepName}`);
-        return false;
-      }
-
       if (!this.steps.has(stepName)) {
         throw new Error(`Unknown pipeline step: ${stepName}`);
       }
-
       return true;
     });
 
@@ -142,10 +133,10 @@ export class PipelineOrchestrator {
       return { steps: [], parallelGroups: [], totalSteps: 0 };
     }
 
-    // Include dependencies that aren't completed yet
+    // Include dependencies (always execute dependencies too)
     const allRequiredSteps = new Set<string>();
     const addStepAndDependencies = (stepName: string) => {
-      if (allRequiredSteps.has(stepName) || completedSteps.has(stepName)) {
+      if (allRequiredSteps.has(stepName)) {
         return;
       }
 
@@ -314,23 +305,10 @@ export class PipelineOrchestrator {
       throw new Error(`Step not found: ${stepName}`);
     }
 
-    // Skip if already completed or failed
-    if (context.completedSteps.has(stepName)) {
-      console.log(`Skipping already completed step: ${stepName}`);
-      return;
-    }
-
     const startTime = Date.now();
     console.log(`Executing step: ${stepName} for email ${context.emailId}`);
 
     try {
-      // Check dependencies are met
-      for (const dep of step.dependencies) {
-        if (!context.completedSteps.has(dep)) {
-          throw new Error(`Dependency not met: ${stepName} requires ${dep}`);
-        }
-      }
-
       // Execute with timeout
       const timeout = step.timeout || this.defaultTimeout;
       const timeoutPromise = new Promise((_, reject) => {
@@ -422,25 +400,6 @@ export class PipelineOrchestrator {
       [emailId]
     );
     return email || null;
-  }
-
-  /**
-   * Load already completed steps from database
-   */
-  private async loadCompletedSteps(context: PipelineContext): Promise<void> {
-    const completedLogs = await query<{ step: string }>(
-      `SELECT DISTINCT step FROM pipeline_logs 
-       WHERE email_id = $1 AND status = 'ok'`,
-      [context.emailId]
-    );
-
-    completedLogs.forEach((log) => {
-      context.completedSteps.add(log.step);
-    });
-
-    console.log(
-      `Found ${context.completedSteps.size} already completed steps for email ${context.emailId}`
-    );
   }
 
   /**
