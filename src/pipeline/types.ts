@@ -1,3 +1,4 @@
+// src/pipeline/types.ts
 export interface Email {
   id: string;
   subject: string;

@@ -36,6 +36,7 @@ export const JOB_TYPES = {
 export interface EmailJobPayload {
   emailId: string;
   priority?: number;
+  requestedSteps?: string[]; // Add this to specify which steps to run
 }
 
 /**
@@ -47,6 +48,7 @@ export async function enqueueEmailProcess(
     priority?: number;
     delay?: number; // seconds
     startAfter?: Date;
+    requestedSteps?: string[]; // Add this parameter
   } = {}
 ) {
   const boss = await getBoss();
@@ -57,7 +59,10 @@ export async function enqueueEmailProcess(
     jobOptions.startAfter = new Date(Date.now() + options.delay * 1000);
   if (options.startAfter) jobOptions.startAfter = options.startAfter;
 
-  const jobData = { emailId };
+  const jobData: EmailJobPayload = {
+    emailId,
+    requestedSteps: options.requestedSteps, // Include requested steps in job data
+  };
 
   console.log(`[ENQUEUE] About to send job:`, {
     type: JOB_TYPES.PROCESS_EMAIL,
@@ -67,7 +72,11 @@ export async function enqueueEmailProcess(
 
   const jobId = await boss.send(JOB_TYPES.PROCESS_EMAIL, jobData, jobOptions);
   console.log(
-    `[ENQUEUE] Enqueued email processing job ${jobId} for email: ${emailId}`
+    `[ENQUEUE] Enqueued email processing job ${jobId} for email: ${emailId}${
+      options.requestedSteps
+        ? ` (steps: ${options.requestedSteps.join(", ")})`
+        : ""
+    }`
   );
 
   return jobId;
@@ -83,10 +92,10 @@ export async function startWorker() {
   await boss.work(
     JOB_TYPES.PROCESS_EMAIL,
     {
-      batchSize: 20, // Process up to 5 jobs at once
+      batchSize: 20, // Process up to 20 jobs at once
     },
     async (jobs) => {
-      // jobs will be an array of 1-5 jobs
+      // jobs will be an array of 1-20 jobs
       const jobArray = Array.isArray(jobs) ? jobs : [jobs];
 
       console.log(
@@ -113,14 +122,27 @@ export async function startWorker() {
           const { emailId } = jobData;
 
           console.log(
-            `[Worker ${process.pid}] Processing email job ${singleJob.id}: ${emailId}`
+            `[Worker ${process.pid}] Processing email job ${
+              singleJob.id
+            }: ${emailId}${
+              jobData.requestedSteps
+                ? ` (steps: ${jobData.requestedSteps.join(", ")})`
+                : ""
+            }`
           );
 
           try {
             const { runPipelineSteps } = await import("../pipeline/runner");
-            await runPipelineSteps(emailId);
+
+            // Pass the requested steps to the runner
+            await runPipelineSteps(emailId, jobData.requestedSteps);
+
             console.log(
-              `[Worker ${process.pid}] Email processing completed: ${emailId}`
+              `[Worker ${process.pid}] Email processing completed: ${emailId}${
+                jobData.requestedSteps
+                  ? ` (steps: ${jobData.requestedSteps.join(", ")})`
+                  : ""
+              }`
             );
           } catch (error) {
             console.error(

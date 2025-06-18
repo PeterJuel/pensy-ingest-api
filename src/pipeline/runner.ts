@@ -1,4 +1,4 @@
-// src/pipeline/runner.ts - Updated to use orchestrator
+// src/pipeline/runner.ts
 import { orchestrator } from "./registry";
 
 export async function runPipelineSteps(

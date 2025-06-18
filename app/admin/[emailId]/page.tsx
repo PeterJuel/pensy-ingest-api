@@ -1,4 +1,4 @@
-// app/admin/[emailId]/page.tsx - Updated server actions
+// app/admin/[emailId]/page.tsx
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { query } from "@lib/db";
@@ -20,38 +20,61 @@ export async function reprocessSteps(formData: FormData) {
 
   if (!emailId) return;
 
+  // Only run if there are actually selected steps
   if (selectedSteps.length === 0) {
-    // If no specific steps selected, re-run all steps via job queue
+    console.log(`No steps selected for reprocessing email ${emailId}`);
+    return; // Don't run anything if no steps are selected
+  }
+
+  try {
+    // Create a job with specific steps metadata
+    await enqueueEmailProcess(emailId, {
+      priority: 5,
+      // Store which specific steps to run in job metadata
+      requestedSteps: selectedSteps,
+    });
+
+    console.log(
+      `Enqueued specific steps [${selectedSteps.join(
+        ", "
+      )}] for email ${emailId}`
+    );
+  } catch (error) {
+    console.error(`Failed to enqueue steps for ${emailId}:`, error);
+
+    // Log the reprocessing attempt failure
+    await query(
+      `INSERT INTO pipeline_logs (email_id, step, status, details)
+       VALUES ($1, $2, $3, $4)`,
+      [
+        emailId,
+        "reprocess",
+        "error",
+        {
+          error: error instanceof Error ? error.message : String(error),
+          attempted_steps: selectedSteps,
+          timestamp: new Date().toISOString(),
+        },
+      ]
+    );
+  }
+}
+
+/**
+ * Server Action: re-run ALL pipeline steps for this email via job queue
+ */
+export async function reprocessAllSteps(formData: FormData) {
+  "use server";
+  const emailId = formData.get("emailId") as string;
+
+  if (!emailId) return;
+
+  try {
+    // Re-run all steps via job queue with higher priority
     await enqueueEmailProcess(emailId, { priority: 5 });
-  } else {
-    try {
-      // Simply run the specific steps - they will always execute now
-      await runSpecificSteps(emailId, selectedSteps);
-
-      console.log(
-        `Successfully reprocessed steps [${selectedSteps.join(
-          ", "
-        )}] for email ${emailId}`
-      );
-    } catch (error) {
-      console.error(`Failed to reprocess steps for ${emailId}:`, error);
-
-      // Log the reprocessing attempt failure
-      await query(
-        `INSERT INTO pipeline_logs (email_id, step, status, details)
-         VALUES ($1, $2, $3, $4)`,
-        [
-          emailId,
-          "reprocess",
-          "error",
-          {
-            error: error instanceof Error ? error.message : String(error),
-            attempted_steps: selectedSteps,
-            timestamp: new Date().toISOString(),
-          },
-        ]
-      );
-    }
+    console.log(`Enqueued all steps for reprocessing email ${emailId}`);
+  } catch (error) {
+    console.error(`Failed to enqueue all steps for ${emailId}:`, error);
   }
 }
 
@@ -64,23 +87,53 @@ export async function cleanUpLogs(formData: FormData) {
   if (!emailId) return;
 
   await query(
-    `
-    DELETE FROM pipeline_logs
-    WHERE email_id = $1
-      AND id NOT IN (
-        SELECT id FROM (
-          SELECT DISTINCT ON (step) id
-          FROM pipeline_logs
-          WHERE email_id = $1
-          ORDER BY step, ts DESC
-        ) latest
-      )
-    `,
+    `DELETE FROM pipeline_logs
+     WHERE email_id = $1
+       AND id NOT IN (
+         SELECT id FROM (
+           SELECT DISTINCT ON (step) id
+           FROM pipeline_logs
+           WHERE email_id = $1
+           ORDER BY step, ts DESC
+         ) latest
+       )`,
     [emailId]
   );
 }
 
-// ... existing interfaces ...
+interface Email {
+  id: string;
+  subject: string | null;
+  meta: any;
+  body: any;
+  received_at: string;
+}
+
+interface PipelineLog {
+  id: string;
+  step: string;
+  status: string;
+  details: any;
+  ts: string;
+}
+
+interface EmailOutput {
+  id: string;
+  output_type: string;
+  content: any;
+  metadata: any;
+  created_at: string;
+}
+
+interface ThreadMsg {
+  id: string;
+  subject: string | null;
+  received_at: string;
+}
+
+interface Props {
+  params: { emailId: string };
+}
 
 export default async function EmailDetail({ params }: Props) {
   const { emailId } = await params;
@@ -88,7 +141,7 @@ export default async function EmailDetail({ params }: Props) {
   // Main email
   const [email] = await query<Email>(
     `SELECT id, subject, meta, body, received_at
-       FROM emails WHERE id = $1`,
+     FROM emails WHERE id = $1`,
     [emailId]
   );
   if (!email) return notFound();
@@ -96,14 +149,14 @@ export default async function EmailDetail({ params }: Props) {
   // Pipeline logs
   const logs = await query<PipelineLog>(
     `SELECT id, step, status, details, ts
-       FROM pipeline_logs WHERE email_id = $1 ORDER BY ts`,
+     FROM pipeline_logs WHERE email_id = $1 ORDER BY ts`,
     [emailId]
   );
 
   // Email outputs
   const outputs = await query<EmailOutput>(
     `SELECT id, output_type, content, metadata, created_at
-       FROM email_outputs WHERE email_id = $1 ORDER BY created_at`,
+     FROM email_outputs WHERE email_id = $1 ORDER BY created_at`,
     [emailId]
   );
 
@@ -128,9 +181,9 @@ export default async function EmailDetail({ params }: Props) {
   // Conversation thread
   const thread = await query<ThreadMsg>(
     `SELECT id, subject, received_at
-       FROM emails WHERE conversation_id = (
-         SELECT conversation_id FROM emails WHERE id = $1
-       ) ORDER BY received_at`,
+     FROM emails WHERE conversation_id = (
+       SELECT conversation_id FROM emails WHERE id = $1
+     ) ORDER BY received_at`,
     [emailId]
   );
 
@@ -263,16 +316,8 @@ export default async function EmailDetail({ params }: Props) {
         </form>
 
         {/* Separate form for reprocessing all steps */}
-        <form action={reprocessSteps} className="mt-2">
+        <form action={reprocessAllSteps} className="mt-2">
           <input type="hidden" name="emailId" value={email.id} />
-          {availableSteps.map((step) => (
-            <input
-              key={step.name}
-              type="hidden"
-              name="steps"
-              value={step.name}
-            />
-          ))}
           <button type="submit" className="btn btn-sm btn-primary">
             Reprocess All Steps
           </button>
