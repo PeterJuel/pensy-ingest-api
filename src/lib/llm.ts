@@ -6,7 +6,7 @@ import { z } from "zod";
 // Zod schema for response validation
 const LLMSummaryResponseSchema = z.object({
   title: z.string().max(100),
-  knowledge_content: z.string(), // Changed from "summary" to "knowledge_content"
+  knowledge_content: z.string(),
   category: z.enum([
     "project",
     "pricing",
@@ -20,13 +20,13 @@ const LLMSummaryResponseSchema = z.object({
   tags: z.array(z.string()),
   confidence: z.number().min(0).max(1),
   key_topics: z.array(z.string()),
-  urgency_level: z.enum(["low", "medium", "high"]),
+  urgency_level: z.enum(["low", "medium", "high"]), // Tilbage til engelsk
   ticket_status: z.enum([
     "closed",
     "open",
     "pending_internal",
     "awaiting_customer",
-  ]),
+  ]), // Tilbage til engelsk
   action_required: z.boolean(),
   next_steps: z.array(z.string()).optional(),
 });
@@ -48,57 +48,67 @@ interface LLMSummaryRequest {
 
 type LLMSummaryResponse = z.infer<typeof LLMSummaryResponseSchema>;
 
-const SYSTEM_PROMPT = `You are an expert email conversation analyzer for a Norwegian underfloor heating company. Your task is to extract detailed technical knowledge from email conversations for RAG knowledge base ingestion.
+const SYSTEM_PROMPT = `Du er en ekspert email-samtale analysator for et gulvvarme firma. Din opgave er at udtrække detaljeret teknisk viden fra email-samtaler til RAG knowledge base.
 
-CATEGORIES (choose the most appropriate):
-1. "project" - Project quotes, mass calculations, drawings, underfloor heating layouts
-2. "pricing" - Product pricing, availability, delivery times, discounts
-3. "technical_support" - Installation help, troubleshooting, product questions
-4. "administrative" - Orders, invoices, price lists, general admin
-5. "warranty" - Claims, defective products, returns, RMA requests
-6. "marketing" - Training, courses, webinars, product presentations
-7. "internal" - Employee-to-employee communication
-8. "not_relevant" - Spam, auto-notifications, irrelevant content
+KATEGORIER (vælg den mest passende - vær specifik):
+1. "project" - KUN projekttilbud, masseberegninger, nye installationstegninger og komplette systemdesign
+2. "pricing" - Prisforespørgsler, tilbud, rabatter, leveringstider, produktpriser
+3. "technical_support" - Installations hjælp, fejlfinding, reparationer, produkt spørgsmål, hvordan-gør-jeg
+4. "administrative" - Ordrebekræftelser, fakturaer, prislister, leveringsstatus, generel administration  
+5. "warranty" - Reklamationer, defekte produkter, returvarer, RMA anmodninger
+6. "marketing" - Kurser, webinarer, produkt præsentationer, kataloger
+7. "internal" - Medarbejder-til-medarbejder kommunikation
+8. "not_relevant" - Spam, auto-notifikationer, irrelevant indhold
 
-TAGS - Create relevant tags for filtering/search. Focus on specific products, technical terms, and business processes. 
-CRITICAL: DO NOT include "Roth", "Nordic", or any company names in tags. Focus on product models and technical terms only.
-Example tags: Touchline_SL, installation, urgent, quote_request, has_attachments, mass_calculation, troubleshooting, warranty_claim, delivery_schedule, TIPPUNION, MultiPex
+KATEGORISERINGS GUIDE:
+- Hvis kunden beder om PRIS/TILBUD på eksisterende system → "pricing"
+- Hvis kunden beder om DESIGN/TEGNINGER til nyt projekt → "project" 
+- Hvis kunden har et PROBLEM med eksisterende installation → "technical_support"
+- Hvis det handler om BESTILLING/LEVERING/FAKTURA → "administrative"
 
-TITLE REQUIREMENTS:
-- NEVER include company names like "Roth", "Nordic" etc.
-- Focus on the technical content: product names, issue types, or business function
-- Examples: "Touchline SL Installation Question", "MultiPex Pipe Pricing Request", "TIPPUNION Technical Support"
+TAGS - Opret relevante tags til filtrering/søgning. Fokuser på specifikke produkter, tekniske termer og forretningsprocesser.
+KRITISK: Inkluder IKKE firma navne i tags. Fokuser kun på produkt modeller og tekniske termer.
+Eksempel tags: Touchline_SL, installation, hastesag, pris_forespørgsel, har_vedhæftninger, masse_beregning, fejlfinding, garanti_sag, leveringsplan, TIPPUNION, MultiPex
 
-RAG KNOWLEDGE EXTRACTION (NOT a summary - extract ALL technical details):
-- Extract and preserve ALL specific technical information: exact product names, model numbers, specifications, quantities, dimensions
-- Include ALL part numbers, article numbers, product codes mentioned
-- Preserve ALL pricing information, measurements, technical specifications
-- Include ALL installation details, configuration steps, troubleshooting procedures
-- Extract ALL error codes, compatibility information, technical requirements
-- Remove personal information: company names, personal names, addresses, phone numbers, email addresses
-- Use placeholders: "Customer", "Agent", "Partner company", "Project location"
-- Format: "Customer requests [extract exact technical details, quantities, specifications, part numbers]. Agent responds [extract exact technical response, procedures, specifications]. Technical context: [all remaining technical details, measurements, compatibility info]."
-- PRESERVE all technical knowledge that would help answer similar future inquiries
-- Include exact dimensions, quantities, product specifications, installation requirements
-- Extract all technical terminology, part numbers, model variants
+TITEL KRAV:
+- Inkluder ALDRIG firmanavne
+- Fokuser på det tekniske indhold: produktnavne, problemtyper eller forretningsfunktion
+- Eksempler: "Touchline SL Installations Spørgsmål", "MultiPex Rør Pris Forespørgsel", "TIPPUNION Teknisk Support"
 
-CRITICAL: This is KNOWLEDGE EXTRACTION, not summarization. Include ALL technical details, specifications, and product information from the conversation.
+VIDEN UDTRÆKNING (IKKE sammendrag - udtræk ALLE tekniske detaljer):
+- Udtræk og bevar ALLE specifikke tekniske informationer: nøjagtige produktnavne, model numre, specifikationer, mængder, dimensioner
+- Inkluder ALLE del numre, artikel numre, produkt koder nævnt
+- Bevar ALLE pris informationer, målinger, tekniske specifikationer
+- Inkluder ALLE installations detaljer, konfigurationstrin, fejlfindingsprocedurer
+- Udtræk ALLE fejlkoder, kompatibilitetsinformation, tekniske krav
+- KRITISK: Fjern ALLE firmanavne fra indholdet - brug kun "Kunde", "Agent", "Partner firma", "Installations firma"
+- Fjern personlige informationer: ALLE firmanavne, personnavne, adresser, telefonnumre, email adresser
+- Brug pladsholdere: "Kunde", "Agent", "Partner firma", "Projekt lokation", "Installations firma"
+- Format: "Kunde anmoder om [udtræk nøjagtige tekniske detaljer, mængder, specifikationer, del numre]. Agent svarer [udtræk nøjagtig teknisk respons, procedurer, specifikationer]. Teknisk kontekst: [alle resterende tekniske detaljer, målinger, kompatibilitets info]."
+- BEVAR al teknisk viden der ville hjælpe med at besvare lignende fremtidige forespørgsler
+- Inkluder nøjagtige dimensioner, mængder, produkt specifikationer, installations krav
+- Udtræk al teknisk terminologi, del numre, model varianter
+- ALDRIG inkluder specifikke firmanavne som "OWESEN A/S", "Brødrene Dahl" osv.
 
-URGENCY: "high" (urgent/critical), "medium" (time-sensitive), "low" (general inquiry)
+KRITISK: Dette er VIDEN UDTRÆKNING, ikke sammendrag. Inkluder ALLE tekniske detaljer, specifikationer og produkt information fra samtalen.
 
-TICKET STATUS: Analyze the conversation to determine current status:
-- "closed" - Issue resolved, no further action needed, customer satisfied
-- "open" - New inquiry or issue, needs response or action
-- "pending_internal" - Waiting for internal action (pricing, technical review, approval)
-- "awaiting_customer" - Waiting for customer response (more info, decision, confirmation)
+HASTIGHED: "high" (hastende/kritisk), "medium" (tidsfølsom), "low" (generel forespørgsel)
 
-CRITICAL INSTRUCTIONS:
-- NEVER use company names in titles or tags
-- EXTRACT every technical detail, don't summarize
-- Focus on creating comprehensive technical knowledge entries
-- This is for internal RAG system training
+SAGS STATUS: Analyser samtalen for at bestemme nuværende status:
+- "closed" - Problem løst, ingen yderligere handling nødvendig, kunde tilfreds
+- "open" - Ny forespørgsel eller problem, kræver respons eller handling
+- "pending_internal" - Venter på intern handling (prissætning, teknisk gennemgang, godkendelse)
+- "awaiting_customer" - Venter på kunde respons (mere info, beslutning, bekræftelse)
 
-Respond ONLY with valid JSON. Extract ALL technical details for comprehensive knowledge capture.`;
+KRITISKE INSTRUKTIONER:
+- Brug ALDRIG firmanavne i titler eller tags
+- UDTRÆK alle tekniske detaljer, lav ikke sammendrag
+- Fokuser på at skabe omfattende tekniske vidensindgange
+- Dette er til internt RAG system træning
+- Svar på dansk med danske tekniske termer
+- VIGTIGT: Fjern ALLE firmanavne fra knowledge_content - brug kun generiske betegnelser som "Kunde", "Installations firma", "Partner firma"
+
+Svar KUN med gyldig JSON på dansk. Udtræk ALLE tekniske detaljer for omfattende viden capture.`;
 
 /**
  * Generate conversation summary using LangChain + OpenAI
@@ -138,49 +148,49 @@ export async function generateLLMSummary(
   };
 
   // Create the user prompt
-  const userPrompt = `Extract comprehensive technical knowledge from this email conversation for RAG knowledge base:
+  const userPrompt = `Udtræk omfattende teknisk viden fra denne email samtale til RAG vidensbase:
 
-CONVERSATION DATA:
+SAMTALE DATA:
 ${JSON.stringify(request.conversation, null, 2)}
 
-EMAIL COUNT: ${request.conversation.emails.length}
-DATE RANGE: ${request.conversation.date_range.earliest} to ${
+EMAIL ANTAL: ${request.conversation.emails.length}
+DATO INTERVAL: ${request.conversation.date_range.earliest} til ${
     request.conversation.date_range.latest
   }
 
-CRITICAL: This is DETAILED KNOWLEDGE EXTRACTION for RAG system training. Extract EVERY technical detail, specification, part number, compatibility info, business process, and solution provided.
+KRITISK: Dette er DETALJERET VIDEN UDTRÆKNING til RAG system træning. Udtræk ALLE tekniske detaljer, specifikationer, del numre, kompatibilitetsinformation, forretningsprocesser og løsninger.
 
-Provide a JSON response with:
+Giv et JSON svar med:
 {
-  "title": "Brief technical title focusing on main topic (NO technical details, NO company names)",
-  "knowledge_content": "COMPREHENSIVE technical documentation for RAG training. Extract ALL specifications, part numbers, technical advice, compatibility info, business processes, pricing details, and step-by-step procedures. Include every detail that would help answer future technical questions about similar scenarios.",
-  "category": "most_appropriate_category",
-  "tags": ["general", "product", "category", "tags"],
+  "title": "Kort teknisk titel fokuseret på hovedemne (INGEN tekniske detaljer, INGEN firmanavne)",
+  "knowledge_content": "OMFATTENDE teknisk dokumentation til RAG træning. Udtræk ALLE specifikationer, del numre, teknisk rådgivning, kompatibilitetsinformation, forretningsprocesser, prisdetaljer og trin-for-trin procedurer. KRITISK: Fjern ALLE firmanavne og brug kun 'Kunde', 'Agent', 'Installations firma', 'Partner firma'. Inkluder hver teknisk detalje der ville hjælpe med at besvare fremtidige tekniske spørgsmål om lignende scenarier.",
+  "category": "mest_passende_kategori",
+  "tags": ["generelle", "produkt", "kategori", "tags"],
   "confidence": 0.95,
-  "key_topics": ["main", "topics"],
+  "key_topics": ["hoved", "emner"],
   "urgency_level": "low|medium|high",
   "ticket_status": "closed|open|pending_internal|awaiting_customer",
   "action_required": true|false,
-  "next_steps": ["if", "action", "required"]
+  "next_steps": ["hvis", "handling", "kræves"]
 }
 
-FIELD GUIDELINES:
-- TITLE: Brief, general topic only (e.g., "VORTEX Pump Components", "Thermostat Installation")
-- KNOWLEDGE_CONTENT: Extract ALL technical content - this is comprehensive technical documentation. Include:
-  * Exact product names, model numbers, part numbers, specifications
-  * All technical advice, compatibility information, installation details
-  * All business processes, pricing discussions, delivery arrangements
-  * All problem-solution pairs, alternatives considered
-  * All measurements, quantities, technical relationships
-  * All customer requirements, special instructions
-- TAGS: General categories only (e.g., "VORTEX", "pump_components", "technical_support")
-- KEY_TOPICS: High-level topics only
+FELT RETNINGSLINJER:
+- TITEL: Kort, generelt emne kun (f.eks., "VORTEX Pumpe Komponenter", "Termostat Installation")
+- KNOWLEDGE_CONTENT: Udtræk ALT teknisk indhold - dette er omfattende teknisk dokumentation. Inkluder:
+  * Nøjagtige produktnavne, model numre, del numre, specifikationer
+  * Al teknisk rådgivning, kompatibilitetsinformation, installations detaljer
+  * Alle forretningsprocesser, prisdiskussioner, leveringsarrangementer
+  * Alle problem-løsning par, overvejede alternativer
+  * Alle målinger, mængder, tekniske forhold
+  * Alle kundekrav, specielle instruktioner
+- TAGS: Generelle kategorier kun (f.eks., "VORTEX", "pumpe_komponenter", "teknisk_support")
+- KEY_TOPICS: Højniveau emner kun
 
-EXAMPLES OF DETAILED EXTRACTION:
-Instead of: "Customer orders pump components"
-Extract: "Customer orders VORTEX pump components: 1x VORTEX overdel 155 including løpehjul and pakning (part #12345), 1x VORTEX BWO-OT with ½" muffe (part #67890). Agent explains technical compatibility: when replacing motor/overdel on existing 155 motor, løpehjul must also be replaced to fit old 150 pumpehus. Alternative solution: 152-154 løpehjul compatible with existing overdel/motor/pumpehus combination."
+EKSEMPLER PÅ DETALJERET UDTRÆKNING:
+I stedet for: "Kunde bestiller pumpe komponenter"
+Udtræk: "Kunde bestiller VORTEX pumpe komponenter: 1x VORTEX overdel 155 inkl. løpehjul og pakning (del #12345), 1x VORTEX BWO-OT med ½" muffe (del #67890). Agent forklarer teknisk kompatibilitet: ved udskiftning af motor/overdel på eksisterende 155 motor skal løpehjul også skiftes for at passe til gamle 150 pumpehus. Alternativ løsning: 152-154 løpehjul kompatibel med eksisterende overdel/motor/pumpehus kombination."
 
-REMEMBER: This is training data for a RAG system. Extract EVERY technical detail, specification, process, and piece of advice that would help answer future similar questions.`;
+HUSk: Dette er træningsdata til et RAG system. Udtræk ALLE tekniske detaljer, specifikationer, processer og råd der ville hjælpe med at besvare fremtidige lignende spørgsmål.`;
 
   // Create messages for the conversation
   const messages = [
@@ -203,12 +213,48 @@ REMEMBER: This is training data for a RAG system. Extract EVERY technical detail
   try {
     parsedResponse = JSON.parse(response.content as string);
   } catch (parseError) {
+    console.log("Raw LLM response:", response.content);
+
+    // Helper function to get error message safely
+    const getErrorMessage = (error: unknown): string => {
+      if (error instanceof Error) {
+        return error.message;
+      }
+      return String(error);
+    };
+
+    // Clean the response text before trying to parse
+    let cleanedContent = response.content as string;
+
+    // Remove markdown code blocks if present
+    cleanedContent = cleanedContent.replace(/```json\s*|\s*```/g, "");
+
     // Try to extract JSON from the response if it's wrapped in text
-    const jsonMatch = (response.content as string).match(/\{[\s\S]*\}/);
+    const jsonMatch = cleanedContent.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
-      parsedResponse = JSON.parse(jsonMatch[0]);
+      try {
+        // Clean control characters from the JSON
+        const cleanedJson = jsonMatch[0]
+          .replace(/[\u0000-\u001F\u007F-\u009F]/g, "") // Remove control characters
+          .replace(/\n/g, "\\n") // Escape newlines
+          .replace(/\r/g, "\\r") // Escape carriage returns
+          .replace(/\t/g, "\\t"); // Escape tabs
+
+        parsedResponse = JSON.parse(cleanedJson);
+      } catch (secondParseError) {
+        console.error("Failed to parse cleaned JSON:", secondParseError);
+        throw new Error(
+          `Could not parse JSON from LLM response. Original error: ${getErrorMessage(
+            parseError
+          )}`
+        );
+      }
     } else {
-      throw new Error("Could not parse JSON from LLM response");
+      throw new Error(
+        `Could not find JSON in LLM response. Parse error: ${getErrorMessage(
+          parseError
+        )}`
+      );
     }
   }
 

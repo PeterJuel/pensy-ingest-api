@@ -92,7 +92,7 @@ export async function startWorker() {
   await boss.work(
     JOB_TYPES.PROCESS_EMAIL,
     {
-      batchSize: 20, // Process up to 20 jobs at once
+      batchSize: 5, // Process up to 20 jobs at once
     },
     async (jobs) => {
       // jobs will be an array of 1-20 jobs

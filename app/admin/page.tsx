@@ -129,6 +129,68 @@ export async function reprocessAllConversations(formData: FormData) {
   }
 }
 
+/**
+ * Server Action: run summary step for all unique conversations
+ */
+export async function runAllSummaries(formData: FormData) {
+  "use server";
+
+  try {
+    // Get all unique conversation IDs that have emails
+    const conversations = await query<{
+      conversation_id: string;
+      email_count: number;
+    }>(
+      `SELECT 
+         conversation_id, 
+         COUNT(*) as email_count
+       FROM emails 
+       WHERE conversation_id IS NOT NULL
+       GROUP BY conversation_id
+       ORDER BY MAX(received_at) DESC`
+    );
+
+    console.log(
+      `Found ${conversations.length} unique conversations for summary processing`
+    );
+
+    // For each conversation, pick one email to trigger the summary step
+    let processedCount = 0;
+    for (const conversation of conversations) {
+      try {
+        // Get the most recent email from this conversation to use as trigger
+        const [triggerEmail] = await query<{ id: string }>(
+          `SELECT id FROM emails 
+           WHERE conversation_id = $1 
+           ORDER BY received_at DESC 
+           LIMIT 1`,
+          [conversation.conversation_id]
+        );
+
+        if (triggerEmail) {
+          // Enqueue just the summary step for this email
+          await enqueueEmailProcess(triggerEmail.id, {
+            priority: 3,
+            requestedSteps: ["summary"],
+          });
+          processedCount++;
+        }
+      } catch (error) {
+        console.error(
+          `Failed to enqueue summary for conversation ${conversation.conversation_id}:`,
+          error
+        );
+      }
+    }
+
+    console.log(
+      `Enqueued summary processing for ${processedCount}/${conversations.length} conversations`
+    );
+  } catch (error) {
+    console.error("Failed to run all summaries:", error);
+  }
+}
+
 export default async function AdminPage() {
   const emails = await query<Email>(
     `SELECT id, subject, inserted_at
@@ -143,7 +205,7 @@ export default async function AdminPage() {
         <h1 className="text-4xl font-extrabold">Ingested Emails</h1>
 
         {/* Bulk Actions */}
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-wrap">
           <form action={reprocessAllEmails}>
             <button
               type="submit"
@@ -161,6 +223,16 @@ export default async function AdminPage() {
               title="Process conversation aggregation for all unique conversations"
             >
               Conversation
+            </button>
+          </form>
+
+          <form action={runAllSummaries}>
+            <button
+              type="submit"
+              className="btn btn-info"
+              title="Generate summaries for all conversations using LLM"
+            >
+              Summary
             </button>
           </form>
 

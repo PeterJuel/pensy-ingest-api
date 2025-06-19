@@ -33,7 +33,7 @@ export class PipelineOrchestrator {
     this.validateNoCycles(step.name, step.dependencies);
 
     this.steps.set(step.name, step);
-    console.log(`Registered pipeline step: ${step.name}`);
+    // console.log(`Registered pipeline step: ${step.name}`); // Commented out to reduce log spam
   }
 
   /**
