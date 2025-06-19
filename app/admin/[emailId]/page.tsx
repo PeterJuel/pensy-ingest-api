@@ -79,6 +79,46 @@ export async function reprocessAllSteps(formData: FormData) {
 }
 
 /**
+ * Server Action: run a single pipeline step for this email
+ */
+export async function runSingleStep(formData: FormData) {
+  "use server";
+  const emailId = formData.get("emailId") as string;
+  const stepName = formData.get("stepName") as string;
+
+  if (!emailId || !stepName) return;
+
+  try {
+    // Create a job with specific step metadata
+    await enqueueEmailProcess(emailId, {
+      priority: 5,
+      // Store which specific step to run in job metadata
+      requestedSteps: [stepName],
+    });
+
+    console.log(`Enqueued step [${stepName}] for email ${emailId}`);
+  } catch (error) {
+    console.error(`Failed to enqueue step ${stepName} for ${emailId}:`, error);
+
+    // Log the reprocessing attempt failure
+    await query(
+      `INSERT INTO pipeline_logs (email_id, step, status, details)
+       VALUES ($1, $2, $3, $4)`,
+      [
+        emailId,
+        "reprocess",
+        "error",
+        {
+          error: error instanceof Error ? error.message : String(error),
+          attempted_steps: [stepName],
+          timestamp: new Date().toISOString(),
+        },
+      ]
+    );
+  }
+}
+
+/**
  * Server Action: clean up old pipeline logs for this email, keeping only the latest per step
  */
 export async function cleanUpLogs(formData: FormData) {
@@ -251,69 +291,64 @@ export default async function EmailDetail({ params }: Props) {
           </form>
         </div>
 
-        {/* Pipeline Step Selection */}
-        <form action={reprocessSteps} className="space-y-4">
-          <input type="hidden" name="emailId" value={email.id} />
+        {/* Pipeline Steps with Individual Run Buttons */}
+        <div className="space-y-4">
+          <h3 className="font-medium mb-2">Pipeline Steps:</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {availableSteps
+              .sort((a, b) => a.priority - b.priority)
+              .map((step) => {
+                const isCompleted = logs.some(
+                  (log) => log.step === step.name && log.status === "ok"
+                );
+                const hasFailed = logs.some(
+                  (log) => log.step === step.name && log.status === "error"
+                );
 
-          <div>
-            <h3 className="font-medium mb-2">Reprocess Pipeline Steps:</h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-              {availableSteps
-                .sort((a, b) => a.priority - b.priority)
-                .map((step) => {
-                  const isCompleted = logs.some(
-                    (log) => log.step === step.name && log.status === "ok"
-                  );
-                  const hasFailed = logs.some(
-                    (log) => log.step === step.name && log.status === "error"
-                  );
-
-                  return (
-                    <label
-                      key={step.name}
-                      className="flex items-center space-x-2 p-2 rounded border hover:bg-gray-100 dark:hover:bg-gray-700"
-                    >
-                      <input
-                        type="checkbox"
-                        name="steps"
-                        value={step.name}
-                        className="checkbox checkbox-sm"
-                      />
-                      <div className="flex-1">
+                return (
+                  <div
+                    key={step.name}
+                    className="flex items-center justify-between p-3 rounded border bg-white dark:bg-gray-800"
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-2 mb-1">
                         <span className="text-sm font-medium">{step.name}</span>
-                        <div className="flex items-center space-x-2">
-                          {isCompleted && (
-                            <span className="text-xs px-1 py-0.5 bg-green-100 text-green-700 rounded">
-                              ✓
-                            </span>
-                          )}
-                          {hasFailed && (
-                            <span className="text-xs px-1 py-0.5 bg-red-100 text-red-700 rounded">
-                              ✗
-                            </span>
-                          )}
-                          <span className="text-xs text-gray-500">
-                            P{step.priority}
+                        {isCompleted && (
+                          <span className="text-xs px-1 py-0.5 bg-green-100 text-green-700 rounded">
+                            ✓
                           </span>
-                        </div>
-                        {step.description && (
-                          <p className="text-xs text-gray-500 mt-1">
-                            {step.description}
-                          </p>
                         )}
+                        {hasFailed && (
+                          <span className="text-xs px-1 py-0.5 bg-red-100 text-red-700 rounded">
+                            ✗
+                          </span>
+                        )}
+                        <span className="text-xs text-gray-500">
+                          P{step.priority}
+                        </span>
                       </div>
-                    </label>
-                  );
-                })}
-            </div>
+                      {step.description && (
+                        <p className="text-xs text-gray-500">
+                          {step.description}
+                        </p>
+                      )}
+                    </div>
+                    <form action={runSingleStep} className="ml-3">
+                      <input type="hidden" name="emailId" value={email.id} />
+                      <input type="hidden" name="stepName" value={step.name} />
+                      <button
+                        type="submit"
+                        className="btn btn-xs btn-primary"
+                        title={`Run ${step.name} step`}
+                      >
+                        Run
+                      </button>
+                    </form>
+                  </div>
+                );
+              })}
           </div>
-
-          <div className="flex gap-2">
-            <button type="submit" className="btn btn-sm btn-secondary">
-              Reprocess Selected Steps
-            </button>
-          </div>
-        </form>
+        </div>
 
         {/* Separate form for reprocessing all steps */}
         <form action={reprocessAllSteps} className="mt-2">
