@@ -6,7 +6,13 @@ export async function runPipelineSteps(
   requestedSteps?: string[]
 ) {
   try {
-    const context = await orchestrator.executeSteps(emailId, requestedSteps);
+    // For manual step selection, skip dependencies
+    const skipDependencies = requestedSteps && requestedSteps.length > 0;
+    const context = await orchestrator.executeSteps(
+      emailId,
+      requestedSteps,
+      skipDependencies
+    );
 
     if (context.failedSteps.size > 0) {
       console.warn(
@@ -29,7 +35,8 @@ export async function runAllSteps(emailId: string) {
 
 // Function to run specific steps (useful for admin actions)
 export async function runSpecificSteps(emailId: string, stepNames: string[]) {
-  return orchestrator.executeSteps(emailId, stepNames);
+  // For admin manual selection, always skip dependencies
+  return orchestrator.executeSteps(emailId, stepNames, true);
 }
 
 // Function to get pipeline stats

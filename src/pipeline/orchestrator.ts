@@ -44,11 +44,12 @@ export class PipelineOrchestrator {
   }
 
   /**
-   * Execute specific steps for an email (with dependency resolution)
+   * Execute specific steps for an email (with optional dependency resolution)
    */
   async executeSteps(
     emailId: string,
-    requestedSteps?: string[]
+    requestedSteps?: string[],
+    skipDependencies: boolean = false
   ): Promise<PipelineContext> {
     console.log(`Starting pipeline execution for email ${emailId}`);
 
@@ -71,13 +72,18 @@ export class PipelineOrchestrator {
     // Determine which steps to run
     const stepsToRun = requestedSteps || Array.from(this.steps.keys());
 
-    // Create execution plan with dependency resolution (no completion checking)
-    const plan = this.createExecutionPlan(stepsToRun, new Set()); // Always pass empty completed set
+    // Create execution plan with or without dependency resolution
+    const plan = this.createExecutionPlan(
+      stepsToRun,
+      new Set(),
+      skipDependencies
+    );
 
     console.log(`Execution plan for ${emailId}:`, {
       totalSteps: plan.totalSteps,
       parallelGroups: plan.parallelGroups.length,
       requestedSteps: stepsToRun,
+      skipDependencies,
     });
 
     // Update processing status
@@ -119,7 +125,8 @@ export class PipelineOrchestrator {
    */
   private createExecutionPlan(
     requestedSteps: string[],
-    _completedSteps: Set<string>
+    _completedSteps: Set<string>,
+    skipDependencies: boolean = false
   ): ExecutionPlan {
     // Validate requested steps exist
     const stepsToRun = requestedSteps.filter((stepName) => {
@@ -133,27 +140,34 @@ export class PipelineOrchestrator {
       return { steps: [], parallelGroups: [], totalSteps: 0 };
     }
 
-    // Include dependencies (always execute dependencies too)
-    const allRequiredSteps = new Set<string>();
-    const addStepAndDependencies = (stepName: string) => {
-      if (allRequiredSteps.has(stepName)) {
-        return;
-      }
+    let allRequiredSteps: Set<string>;
 
-      const step = this.steps.get(stepName);
-      if (!step) {
-        throw new Error(`Unknown pipeline step: ${stepName}`);
-      }
+    if (skipDependencies) {
+      // Just run the requested steps without dependencies
+      allRequiredSteps = new Set(stepsToRun);
+    } else {
+      // Include dependencies (always execute dependencies too)
+      allRequiredSteps = new Set<string>();
+      const addStepAndDependencies = (stepName: string) => {
+        if (allRequiredSteps.has(stepName)) {
+          return;
+        }
 
-      // Add dependencies first
-      for (const dep of step.dependencies) {
-        addStepAndDependencies(dep);
-      }
+        const step = this.steps.get(stepName);
+        if (!step) {
+          throw new Error(`Unknown pipeline step: ${stepName}`);
+        }
 
-      allRequiredSteps.add(stepName);
-    };
+        // Add dependencies first
+        for (const dep of step.dependencies) {
+          addStepAndDependencies(dep);
+        }
 
-    stepsToRun.forEach(addStepAndDependencies);
+        allRequiredSteps.add(stepName);
+      };
+
+      stepsToRun.forEach(addStepAndDependencies);
+    }
 
     // Topological sort to determine execution order
     const sortedSteps = this.topologicalSort(Array.from(allRequiredSteps));

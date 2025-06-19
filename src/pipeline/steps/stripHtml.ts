@@ -31,8 +31,46 @@ function htmlToText(html: string): string {
 }
 
 /**
+ * Extract attachment information from the full email object
+ */
+function extractAttachments(email: Email): string[] {
+  const attachments: string[] = [];
+
+  try {
+    // The email.body contains the full email JSON from Office 365
+    // Looking at your sample, attachments are at the top level of this JSON
+    let emailData = email.body;
+
+    // Check for attachments at the top level (this should be where they are)
+    if (emailData?.attachments && Array.isArray(emailData.attachments)) {
+      emailData.attachments.forEach((attachment: any, index: number) => {
+        if (attachment.name) {
+          attachments.push(attachment.name);
+        }
+      });
+    }
+
+    // Also check if it's nested deeper in case of different email structures
+    if (
+      emailData?.body?.attachments &&
+      Array.isArray(emailData.body.attachments)
+    ) {
+      emailData.body.attachments.forEach((attachment: any) => {
+        if (attachment.name && !attachments.includes(attachment.name)) {
+          attachments.push(attachment.name);
+        }
+      });
+    }
+  } catch (error) {
+    console.warn(`Failed to extract attachments for email ${email.id}:`, error);
+  }
+
+  return attachments;
+}
+
+/**
  * Pipeline step: Strip HTML (including comments) and standard boilerplate from email body,
- * then store as plain_text output.
+ * then store as plain_text output with attachment information.
  *
  * This function is now compatible with the PipelineStep interface.
  */
@@ -74,9 +112,18 @@ export async function stripHtml(email: Email): Promise<void> {
       .replace(/Please note that this message[\s\S]*/i, "")
       .trim();
 
+    // Extract attachment information from the full email object
+    const attachments = extractAttachments(email);
+
     const originalLength = rawText.length;
     const finalLength = cleanedText.length;
 
+    // Create content object with text and attachments
+    const contentObject = {
+      text: cleanedText,
+      attachments: attachments,
+    };
+ 
     // Upsert into email_outputs
     await query(
       `
@@ -93,7 +140,7 @@ export async function stripHtml(email: Email): Promise<void> {
       [
         email.id,
         "plain_text",
-        { text: cleanedText },
+        contentObject, // Now includes both text and attachments
         {
           original_length: originalLength,
           stripped_length: finalLength,
@@ -101,13 +148,14 @@ export async function stripHtml(email: Email): Promise<void> {
           compression_ratio:
             originalLength > 0 ? finalLength / originalLength : 0,
           content_source: contentSource,
+          attachment_count: attachments.length
         },
         "v1",
       ]
     );
 
     console.log(
-      `stripHtml completed for email ${email.id}: ${originalLength} -> ${finalLength} chars`
+      `stripHtml completed for email ${email.id}: ${originalLength} -> ${finalLength} chars, ${attachments.length} attachments`
     );
   } catch (error) {
     // Error logging is now handled by the orchestrator

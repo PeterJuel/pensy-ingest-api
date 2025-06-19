@@ -21,20 +21,111 @@ export async function reprocessAllEmails(formData: FormData) {
       `SELECT id FROM emails ORDER BY inserted_at DESC`
     );
 
-    // Enqueue each email for processing with lower priority
+    // Enqueue each email for strip_html processing only
     let enqueuedCount = 0;
     for (const email of emails) {
-      await enqueueEmailProcess(email.id, { priority: 3 });
+      await enqueueEmailProcess(email.id, {
+        priority: 3,
+        requestedSteps: ["strip_html"], // Only run strip_html
+      });
       enqueuedCount++;
     }
 
     console.log(`Enqueued ${enqueuedCount} emails for strip_html reprocessing`);
-
-    // You could redirect with a success message or use revalidatePath
-    // For now, the page will just refresh
   } catch (error) {
     console.error("Failed to enqueue all emails:", error);
-    // In a production app, you might want to handle this error more gracefully
+  }
+}
+
+/**
+ * Server Action: run all pipeline steps for all emails
+ */
+export async function runAllSteps(formData: FormData) {
+  "use server";
+
+  try {
+    // Get all email IDs
+    const emails = await query<{ id: string }>(
+      `SELECT id FROM emails ORDER BY inserted_at DESC`
+    );
+
+    // Enqueue each email for all pipeline steps
+    let enqueuedCount = 0;
+    for (const email of emails) {
+      await enqueueEmailProcess(email.id, {
+        priority: 3,
+        // No requestedSteps = run all registered steps
+      });
+      enqueuedCount++;
+    }
+
+    console.log(
+      `Enqueued ${enqueuedCount} emails for full pipeline processing`
+    );
+  } catch (error) {
+    console.error("Failed to enqueue all emails for full processing:", error);
+  }
+}
+
+/**
+ * Server Action: run conversation step for all unique conversations
+ */
+export async function reprocessAllConversations(formData: FormData) {
+  "use server";
+
+  try {
+    // Get all unique conversation IDs that have emails
+    const conversations = await query<{
+      conversation_id: string;
+      email_count: number;
+    }>(
+      `SELECT 
+         conversation_id, 
+         COUNT(*) as email_count
+       FROM emails 
+       WHERE conversation_id IS NOT NULL
+       GROUP BY conversation_id
+       ORDER BY MAX(received_at) DESC`
+    );
+
+    console.log(
+      `Found ${conversations.length} unique conversations to process`
+    );
+
+    // For each conversation, pick one email to trigger the conversation step
+    let processedCount = 0;
+    for (const conversation of conversations) {
+      try {
+        // Get the most recent email from this conversation to use as trigger
+        const [triggerEmail] = await query<{ id: string }>(
+          `SELECT id FROM emails 
+           WHERE conversation_id = $1 
+           ORDER BY received_at DESC 
+           LIMIT 1`,
+          [conversation.conversation_id]
+        );
+
+        if (triggerEmail) {
+          // Enqueue just the conversation step for this email
+          await enqueueEmailProcess(triggerEmail.id, {
+            priority: 3,
+            requestedSteps: ["conversation"],
+          });
+          processedCount++;
+        }
+      } catch (error) {
+        console.error(
+          `Failed to enqueue conversation ${conversation.conversation_id}:`,
+          error
+        );
+      }
+    }
+
+    console.log(
+      `Enqueued conversation processing for ${processedCount}/${conversations.length} conversations`
+    );
+  } catch (error) {
+    console.error("Failed to reprocess all conversations:", error);
   }
 }
 
@@ -57,9 +148,29 @@ export default async function AdminPage() {
             <button
               type="submit"
               className="btn btn-secondary"
-              title="Re-run strip_html processing for all emails in the database"
+              title="Re-run strip_html processing for all emails"
             >
-              Re-run strip_html (All Emails)
+              Strip_html
+            </button>
+          </form>
+
+          <form action={reprocessAllConversations}>
+            <button
+              type="submit"
+              className="btn btn-accent"
+              title="Process conversation aggregation for all unique conversations"
+            >
+              Conversation
+            </button>
+          </form>
+
+          <form action={runAllSteps}>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              title="Run all pipeline steps for all emails"
+            >
+              Run All
             </button>
           </form>
         </div>

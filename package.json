@@ -9,6 +9,7 @@
     "build": "next build",
     "start": "next start",
     "worker": "dotenv -e .env.local -- tsx src/worker/index.ts",
+    "worker:dev": "dotenv -e .env.local -- tsx watch src/worker/index.ts",
     "migrate": "dotenv -e .env.local -- sh -c 'psql \"$DATABASE_URL\" -f migrations/001_init.sql'"
   },
   "keywords": [],
@@ -16,13 +17,17 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@langchain/core": "^0.3.59",
+    "@langchain/openai": "^0.5.13",
     "graphile-worker": "^0.16.6",
+    "langsmith": "^0.3.33",
     "lucide-react": "^0.515.0",
     "next": "^15.3.3",
     "node-fetch": "^2.7.0",
     "node-html-parser": "^7.0.1",
     "pg": "^8.16.0",
-    "pg-boss": "^10.3.2"
+    "pg-boss": "^10.3.2",
+    "zod": "^3.25.67"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.10",
