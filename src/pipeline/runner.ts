@@ -28,10 +28,6 @@ export async function runPipelineSteps(
   }
 }
 
-// Convenience function to run all steps
-export async function runAllSteps(emailId: string) {
-  return orchestrator.executeAll(emailId);
-}
 
 // Function to run specific steps (useful for admin actions)
 export async function runSpecificSteps(emailId: string, stepNames: string[]) {

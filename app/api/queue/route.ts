@@ -1,6 +1,6 @@
 // app/api/queue/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { getBoss, getQueueStats, cancelJob, JOB_TYPES } from "@lib/jobQueue";
+import { getBoss, getQueueStats, JOB_TYPES } from "@lib/jobQueue";
 import { query as dbQuery } from "@lib/db";
 
 // GET /api/queue - View queue status
