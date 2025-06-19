@@ -4,7 +4,7 @@ import { Email } from "../types";
 
 interface SummaryResult {
   title: string;
-  summary: string;
+  summary: string; // We'll map knowledge_content to summary for DB compatibility
   category: string;
   tags: string[];
   // Additional LLM fields
@@ -134,7 +134,7 @@ async function generateSummary(conversation: any): Promise<SummaryResult> {
 
   return {
     title: llmResult.title,
-    summary: llmResult.summary,
+    summary: llmResult.knowledge_content, // Map knowledge_content to summary for DB compatibility
     category: llmResult.category,
     tags: llmResult.tags,
     // Include additional LLM fields

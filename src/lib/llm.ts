@@ -6,7 +6,7 @@ import { z } from "zod";
 // Zod schema for response validation
 const LLMSummaryResponseSchema = z.object({
   title: z.string().max(100),
-  summary: z.string(), // Removed length restriction for detailed RAG content
+  knowledge_content: z.string(), // Changed from "summary" to "knowledge_content"
   category: z.enum([
     "project",
     "pricing",
@@ -138,7 +138,7 @@ export async function generateLLMSummary(
   };
 
   // Create the user prompt
-  const userPrompt = `Analyze this email conversation and provide structured summary information:
+  const userPrompt = `Extract comprehensive technical knowledge from this email conversation for RAG knowledge base:
 
 CONVERSATION DATA:
 ${JSON.stringify(request.conversation, null, 2)}
@@ -148,19 +148,39 @@ DATE RANGE: ${request.conversation.date_range.earliest} to ${
     request.conversation.date_range.latest
   }
 
-Please provide a JSON response with:
+CRITICAL: This is DETAILED KNOWLEDGE EXTRACTION for RAG system training. Extract EVERY technical detail, specification, part number, compatibility info, business process, and solution provided.
+
+Provide a JSON response with:
 {
-  "title": "Clear, descriptive title (max 100 chars)",
-  "summary": "Comprehensive summary of the conversation (2-3 sentences)",
+  "title": "Brief technical title focusing on main topic (NO technical details, NO company names)",
+  "knowledge_content": "COMPREHENSIVE technical documentation for RAG training. Extract ALL specifications, part numbers, technical advice, compatibility info, business processes, pricing details, and step-by-step procedures. Include every detail that would help answer future technical questions about similar scenarios.",
   "category": "most_appropriate_category",
-  "tags": ["relevant", "tags", "for", "filtering"],
+  "tags": ["general", "product", "category", "tags"],
   "confidence": 0.95,
-  "key_topics": ["main", "topics", "discussed"],
+  "key_topics": ["main", "topics"],
   "urgency_level": "low|medium|high",
   "ticket_status": "closed|open|pending_internal|awaiting_customer",
   "action_required": true|false,
   "next_steps": ["if", "action", "required"]
-}`;
+}
+
+FIELD GUIDELINES:
+- TITLE: Brief, general topic only (e.g., "VORTEX Pump Components", "Thermostat Installation")
+- KNOWLEDGE_CONTENT: Extract ALL technical content - this is comprehensive technical documentation. Include:
+  * Exact product names, model numbers, part numbers, specifications
+  * All technical advice, compatibility information, installation details
+  * All business processes, pricing discussions, delivery arrangements
+  * All problem-solution pairs, alternatives considered
+  * All measurements, quantities, technical relationships
+  * All customer requirements, special instructions
+- TAGS: General categories only (e.g., "VORTEX", "pump_components", "technical_support")
+- KEY_TOPICS: High-level topics only
+
+EXAMPLES OF DETAILED EXTRACTION:
+Instead of: "Customer orders pump components"
+Extract: "Customer orders VORTEX pump components: 1x VORTEX overdel 155 including løpehjul and pakning (part #12345), 1x VORTEX BWO-OT with ½" muffe (part #67890). Agent explains technical compatibility: when replacing motor/overdel on existing 155 motor, løpehjul must also be replaced to fit old 150 pumpehus. Alternative solution: 152-154 løpehjul compatible with existing overdel/motor/pumpehus combination."
+
+REMEMBER: This is training data for a RAG system. Extract EVERY technical detail, specification, process, and piece of advice that would help answer future similar questions.`;
 
   // Create messages for the conversation
   const messages = [
