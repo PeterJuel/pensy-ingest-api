@@ -204,8 +204,11 @@ export default async function AdminPage() {
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-4xl font-extrabold">Ingested Emails</h1>
 
-        {/* Bulk Actions */}
+        {/* Navigation and Bulk Actions */}
         <div className="flex gap-3 flex-wrap">
+          <Link href="/admin/queue" className="btn btn-outline">
+            Queue Stats
+          </Link>
           <form action={reprocessAllEmails}>
             <button
               type="submit"

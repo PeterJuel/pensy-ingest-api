@@ -22,8 +22,12 @@ export async function getBoss(): Promise<PgBoss> {
     await boss.start();
     console.log("pg-boss started");
 
-    // Create required queue
-    await boss.createQueue(JOB_TYPES.PROCESS_EMAIL);
+    // Create required queue with retry configuration
+    await boss.createQueue(JOB_TYPES.PROCESS_EMAIL, {
+      retryLimit: 2,        // 2 retries (3 total attempts)
+      retryDelay: 30000,    // 30 seconds delay between retries
+      retryBackoff: true    // exponential backoff (30s, 60s, 120s, etc.)
+    });
   }
   return boss;
 }

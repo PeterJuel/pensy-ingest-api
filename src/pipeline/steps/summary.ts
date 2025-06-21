@@ -14,6 +14,8 @@ interface SummaryResult {
   ticket_status: string;
   action_required: boolean;
   next_steps?: string[];
+  // Trace information
+  traceInfo?: any;
 }
 
 /**
@@ -80,6 +82,18 @@ export async function summary(email: Email): Promise<void> {
     // TODO: Replace with actual LLM call when ready
     const summaryResult = await generateSummary(conversation);
 
+    // Validate that we actually got a summary
+    if (!summaryResult.summary || summaryResult.summary.trim() === '') {
+      throw new Error(`Summary generation failed: No summary content generated for conversation ${conversationId}`);
+    }
+
+    if (!summaryResult.title || summaryResult.title.trim() === '') {
+      throw new Error(`Summary generation failed: No title generated for conversation ${conversationId}`);
+    }
+
+    // Log validation success
+    console.log(`[summary] Validation passed - Generated summary: ${summaryResult.summary.length} chars, title: "${summaryResult.title}"`);
+
     // Update the conversation_outputs table with summary data
     await query(
       `
@@ -112,12 +126,18 @@ export async function summary(email: Email): Promise<void> {
           ticket_status: summaryResult.ticket_status,
           action_required: summaryResult.action_required,
           next_steps: summaryResult.next_steps || [],
+          // Store LangChain trace information
+          langchain_trace: summaryResult.traceInfo || null,
         },
       ]
     );
 
+    const traceMessage = summaryResult.traceInfo?.langsmith_url 
+      ? ` - LangSmith trace: ${summaryResult.traceInfo.langsmith_url}`
+      : '';
+    
     console.log(
-      `[summary] Completed summary for conversation ${conversationId}: "${summaryResult.title}" (${summaryResult.category})`
+      `[summary] Completed summary for conversation ${conversationId}: "${summaryResult.title}" (${summaryResult.category})${traceMessage}`
     );
   } catch (error) {
     console.error(`[summary] Failed for email ${email.id}:`, error);
@@ -132,6 +152,21 @@ async function generateSummary(conversation: any): Promise<SummaryResult> {
   const { generateLLMSummary } = await import("../../lib/llm");
   const llmResult = await generateLLMSummary(conversation);
 
+  // Validate LLM result before processing
+  if (!llmResult) {
+    throw new Error("LLM returned null/undefined result");
+  }
+
+  if (!llmResult.knowledge_content || llmResult.knowledge_content.trim() === '') {
+    throw new Error("LLM failed to generate knowledge_content (summary)");
+  }
+
+  if (!llmResult.title || llmResult.title.trim() === '') {
+    throw new Error("LLM failed to generate title");
+  }
+
+  console.log(`[generateSummary] LLM validation passed - knowledge_content: ${llmResult.knowledge_content.length} chars, title: "${llmResult.title}"`);
+
   return {
     title: llmResult.title,
     summary: llmResult.knowledge_content, // Map knowledge_content to summary for DB compatibility
@@ -144,5 +179,7 @@ async function generateSummary(conversation: any): Promise<SummaryResult> {
     ticket_status: llmResult.ticket_status,
     action_required: llmResult.action_required,
     next_steps: llmResult.next_steps,
+    // Include trace information
+    traceInfo: llmResult.traceInfo,
   };
 }

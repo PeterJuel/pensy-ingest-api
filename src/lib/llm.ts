@@ -2,6 +2,7 @@
 import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { z } from "zod";
+import { randomUUID } from "crypto";
 
 // Zod schema for response validation
 const LLMSummaryResponseSchema = z.object({
@@ -115,8 +116,26 @@ Svar KUN med gyldig JSON på dansk. Udtræk ALLE tekniske detaljer for omfattend
  */
 export async function generateLLMSummary(
   conversationData: any
-): Promise<LLMSummaryResponse> {
+): Promise<LLMSummaryResponse & { traceInfo?: any }> {
   const startTime = Date.now();
+  let traceInfo: any = null;
+
+  // Validate required environment variables
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY environment variable is required");
+  }
+  if (!process.env.LANGCHAIN_API_KEY) {
+    throw new Error("LANGCHAIN_API_KEY environment variable is required");
+  }
+  if (!process.env.LANGCHAIN_PROJECT) {
+    throw new Error("LANGCHAIN_PROJECT environment variable is required");
+  }
+  if (!process.env.LANGCHAIN_PROJECT_ID) {
+    throw new Error("LANGCHAIN_PROJECT_ID environment variable is required");
+  }
+  if (!process.env.LANGCHAIN_ORG_ID) {
+    throw new Error("LANGCHAIN_ORG_ID environment variable is required");
+  }
 
   // Initialize ChatOpenAI with LangSmith tracing
   const llm = new ChatOpenAI({
@@ -127,10 +146,11 @@ export async function generateLLMSummary(
     // LangSmith configuration
     tags: ["email-summary", "conversation-analysis"],
     metadata: {
-      project: "roht-api-dev",
+      project: process.env.LANGCHAIN_PROJECT,
       component: "email-pipeline",
       step: "summary-generation",
       email_count: conversationData.emails?.length || 0,
+      conversation_id: conversationData.conversation_id,
     },
   });
 
@@ -198,14 +218,34 @@ HUSk: Dette er træningsdata til et RAG system. Udtræk ALLE tekniske detaljer, 
     new HumanMessage(userPrompt),
   ];
 
-  // Make the LLM request with LangChain
+  // Make the LLM request with LangChain and capture trace info
+  const runId = randomUUID();
   const response = await llm.invoke(messages, {
+    runId: runId,
     tags: ["summary-generation"],
     metadata: {
       conversation_id: conversationData.conversation_id,
       email_count: request.conversation.emails.length,
       processing_timestamp: new Date().toISOString(),
     },
+    callbacks: [
+      {
+        handleLLMStart: async (llm, prompts, runId) => {
+          traceInfo = {
+            run_id: runId,
+            start_time: new Date().toISOString(),
+            model_name: process.env.OPENAI_MODEL || "o3-mini",
+            langsmith_project: process.env.LANGCHAIN_PROJECT,
+          };
+        },
+        handleLLMEnd: async (output, runId) => {
+          if (traceInfo) {
+            traceInfo.end_time = new Date().toISOString();
+            traceInfo.token_usage = output.llmOutput?.tokenUsage;
+          }
+        },
+      },
+    ],
   });
 
   // Parse and validate the response
@@ -261,11 +301,24 @@ HUSk: Dette er træningsdata til et RAG system. Udtræk ALLE tekniske detaljer, 
   // Validate the response using Zod schema
   const validatedResponse = LLMSummaryResponseSchema.parse(parsedResponse);
 
+  // Generate LangSmith trace URL if we have trace info
+  let langsmithUrl = null;
+  if (traceInfo) {
+    langsmithUrl = `https://smith.langchain.com/o/${process.env.LANGCHAIN_ORG_ID}/projects/p/${process.env.LANGCHAIN_PROJECT_ID}/r/${traceInfo.run_id}`;
+  }
+
   console.log(
     `LLM summary generated in ${
       Date.now() - startTime
-    }ms with LangSmith tracking`
+    }ms with LangSmith tracking${langsmithUrl ? ` - Trace: ${langsmithUrl}` : ''}`
   );
 
-  return validatedResponse;
+  return {
+    ...validatedResponse,
+    traceInfo: traceInfo ? {
+      ...traceInfo,
+      langsmith_url: langsmithUrl,
+      processing_duration_ms: Date.now() - startTime,
+    } : undefined,
+  };
 }
