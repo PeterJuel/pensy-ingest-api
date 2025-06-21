@@ -5,7 +5,7 @@ module.exports = {
   theme: { extend: {} },
   plugins: [require("daisyui")],
   daisyui: {
-    themes: ["light", "dark"], // optional: enable dark mode
-    darkTheme: "dark",
+    themes: ["corporate", "business"], // professional SaaS themes
+    darkTheme: "business",
   },
 };
