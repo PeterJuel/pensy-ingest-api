@@ -3,6 +3,7 @@ import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { z } from "zod";
 import { randomUUID } from "crypto";
+import logger from "./logger";
 
 // Zod schema for response validation
 const LLMSummaryResponseSchema = z.object({
@@ -253,7 +254,9 @@ HUSk: Dette er træningsdata til et RAG system. Udtræk ALLE tekniske detaljer, 
   try {
     parsedResponse = JSON.parse(response.content as string);
   } catch (parseError) {
-    console.log("Raw LLM response:", response.content);
+    logger.debug("Raw LLM response for JSON parsing failure", "LLM", { 
+      responseContent: response.content 
+    });
 
     // Helper function to get error message safely
     const getErrorMessage = (error: unknown): string => {
@@ -282,7 +285,9 @@ HUSk: Dette er træningsdata til et RAG system. Udtræk ALLE tekniske detaljer, 
 
         parsedResponse = JSON.parse(cleanedJson);
       } catch (secondParseError) {
-        console.error("Failed to parse cleaned JSON:", secondParseError);
+        logger.error("Failed to parse cleaned JSON", "LLM", { 
+          error: secondParseError instanceof Error ? secondParseError.message : String(secondParseError)
+        });
         throw new Error(
           `Could not parse JSON from LLM response. Original error: ${getErrorMessage(
             parseError
@@ -307,11 +312,10 @@ HUSk: Dette er træningsdata til et RAG system. Udtræk ALLE tekniske detaljer, 
     langsmithUrl = `https://smith.langchain.com/o/${process.env.LANGCHAIN_ORG_ID}/projects/p/${process.env.LANGCHAIN_PROJECT_ID}/r/${traceInfo.run_id}`;
   }
 
-  console.log(
-    `LLM summary generated in ${
-      Date.now() - startTime
-    }ms with LangSmith tracking${langsmithUrl ? ` - Trace: ${langsmithUrl}` : ''}`
-  );
+  logger.info("LLM summary generated", "LLM", {
+    duration: `${Date.now() - startTime}ms`,
+    langsmithTrace: langsmithUrl
+  });
 
   return {
     ...validatedResponse,

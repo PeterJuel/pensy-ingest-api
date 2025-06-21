@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBoss, getQueueStats, JOB_TYPES } from "@lib/jobQueue";
 import { query as dbQuery } from "@lib/db";
+import logger from "../../../src/lib/logger";
 
 // GET /api/queue - View queue status
 export async function GET(req: NextRequest) {
@@ -52,7 +53,11 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: "Invalid action" }, { status: 400 });
     }
   } catch (error) {
-    console.error("Queue API error:", error);
+    logger.error(
+      "Queue API error occurred",
+      "API",
+      { error: error instanceof Error ? error.message : String(error) }
+    );
     return NextResponse.json(
       { error: "Internal Server Error" },
       { status: 500 }
@@ -115,7 +120,14 @@ export async function POST(req: NextRequest) {
               await boss.cancel(jobType, job.id);
               retriedCount++;
             } catch (error) {
-              console.error(`Failed to retry job ${job.id}:`, error);
+              logger.error(
+                "Failed to retry job",
+                "API",
+                { 
+                  jobId: job.id, 
+                  error: error instanceof Error ? error.message : String(error) 
+                }
+              );
             }
           }
 
@@ -133,7 +145,11 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Invalid action" }, { status: 400 });
     }
   } catch (error) {
-    console.error("Queue management error:", error);
+    logger.error(
+      "Queue management error occurred",
+      "API",
+      { error: error instanceof Error ? error.message : String(error) }
+    );
     return NextResponse.json(
       { error: "Internal Server Error" },
       { status: 500 }

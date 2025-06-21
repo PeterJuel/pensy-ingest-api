@@ -1,5 +1,6 @@
 // src/pipeline/steps/summary.ts
 import { query } from "../../lib/db";
+import logger from "../../lib/logger";
 import { Email } from "../types";
 
 interface SummaryResult {
@@ -35,15 +36,14 @@ export async function summary(email: Email): Promise<void> {
     const conversationId = email.conversation_id;
 
     if (!conversationId) {
-      console.warn(
-        `[summary] Email ${email.id} has no conversation_id, skipping`
-      );
+      logger.warn("Email has no conversation_id, skipping", "SUMMARY", { emailId: email.id });
       return;
     }
 
-    console.log(
-      `[summary] Processing summary for conversation ${conversationId} triggered by email ${email.id}`
-    );
+    logger.info("Processing summary for conversation", "SUMMARY", { 
+      conversationId, 
+      triggeredByEmailId: email.id 
+    });
 
     // Get the conversation content
     const [conversationData] = await query<{
@@ -59,9 +59,7 @@ export async function summary(email: Email): Promise<void> {
     );
 
     if (!conversationData) {
-      console.warn(
-        `[summary] No conversation data found for conversation ${conversationId}`
-      );
+      logger.warn("No conversation data found", "SUMMARY", { conversationId });
       return;
     }
 
@@ -72,9 +70,7 @@ export async function summary(email: Email): Promise<void> {
       !conversation.emails ||
       conversation.emails.length === 0
     ) {
-      console.warn(
-        `[summary] No emails found in conversation ${conversationId}`
-      );
+      logger.warn("No emails found in conversation", "SUMMARY", { conversationId });
       return;
     }
 
@@ -92,7 +88,10 @@ export async function summary(email: Email): Promise<void> {
     }
 
     // Log validation success
-    console.log(`[summary] Validation passed - Generated summary: ${summaryResult.summary.length} chars, title: "${summaryResult.title}"`);
+    logger.info("Validation passed - Generated summary", "SUMMARY", { 
+      summaryLength: summaryResult.summary.length, 
+      title: summaryResult.title 
+    });
 
     // Update the conversation_outputs table with summary data
     await query(
@@ -136,11 +135,17 @@ export async function summary(email: Email): Promise<void> {
       ? ` - LangSmith trace: ${summaryResult.traceInfo.langsmith_url}`
       : '';
     
-    console.log(
-      `[summary] Completed summary for conversation ${conversationId}: "${summaryResult.title}" (${summaryResult.category})${traceMessage}`
-    );
+    logger.info("Completed summary for conversation", "SUMMARY", {
+      conversationId,
+      title: summaryResult.title,
+      category: summaryResult.category,
+      langsmithTrace: summaryResult.traceInfo?.langsmith_url
+    });
   } catch (error) {
-    console.error(`[summary] Failed for email ${email.id}:`, error);
+    logger.error("Failed to process summary", "SUMMARY", { 
+      emailId: email.id, 
+      error: error instanceof Error ? error.message : String(error) 
+    });
     throw error;
   }
 }
@@ -165,7 +170,10 @@ async function generateSummary(conversation: any): Promise<SummaryResult> {
     throw new Error("LLM failed to generate title");
   }
 
-  console.log(`[generateSummary] LLM validation passed - knowledge_content: ${llmResult.knowledge_content.length} chars, title: "${llmResult.title}"`);
+  logger.info("LLM validation passed", "SUMMARY", { 
+    knowledgeContentLength: llmResult.knowledge_content.length, 
+    title: llmResult.title 
+  });
 
   return {
     title: llmResult.title,

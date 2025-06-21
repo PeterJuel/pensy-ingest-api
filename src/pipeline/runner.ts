@@ -1,5 +1,6 @@
 // src/pipeline/runner.ts
 import { orchestrator } from "./registry";
+import logger from "../lib/logger";
 
 export async function runPipelineSteps(
   emailId: string,
@@ -15,15 +16,19 @@ export async function runPipelineSteps(
     );
 
     if (context.failedSteps.size > 0) {
-      console.warn(
-        `Pipeline completed with ${context.failedSteps.size} failed steps for email ${emailId}:`,
-        Array.from(context.failedSteps)
-      );
+      logger.warn("Pipeline completed with failed steps", "RUNNER", {
+        emailId,
+        failedStepsCount: context.failedSteps.size,
+        failedSteps: Array.from(context.failedSteps)
+      });
     }
 
     return context;
   } catch (error) {
-    console.error(`Pipeline execution failed for email ${emailId}:`, error);
+    logger.error("Pipeline execution failed", "RUNNER", { 
+      emailId, 
+      error: error instanceof Error ? error.message : String(error) 
+    });
     throw error;
   }
 }

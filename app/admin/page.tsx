@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { query } from "@lib/db";
 import { enqueueEmailProcess } from "../../src/lib/jobQueue";
+import logger from "../../src/lib/logger";
 
 type Email = {
   id: string;
@@ -31,9 +32,17 @@ export async function reprocessAllEmails(formData: FormData) {
       enqueuedCount++;
     }
 
-    console.log(`Enqueued ${enqueuedCount} emails for strip_html reprocessing`);
+    logger.info(
+      "Enqueued emails for strip_html reprocessing",
+      "ADMIN",
+      { enqueuedCount }
+    );
   } catch (error) {
-    console.error("Failed to enqueue all emails:", error);
+    logger.error(
+      "Failed to enqueue all emails for strip_html reprocessing",
+      "ADMIN",
+      { error: error instanceof Error ? error.message : String(error) }
+    );
   }
 }
 
@@ -59,11 +68,17 @@ export async function runAllSteps(formData: FormData) {
       enqueuedCount++;
     }
 
-    console.log(
-      `Enqueued ${enqueuedCount} emails for full pipeline processing`
+    logger.info(
+      "Enqueued emails for full pipeline processing",
+      "ADMIN",
+      { enqueuedCount }
     );
   } catch (error) {
-    console.error("Failed to enqueue all emails for full processing:", error);
+    logger.error(
+      "Failed to enqueue all emails for full processing",
+      "ADMIN",
+      { error: error instanceof Error ? error.message : String(error) }
+    );
   }
 }
 
@@ -88,8 +103,10 @@ export async function reprocessAllConversations(formData: FormData) {
        ORDER BY MAX(received_at) DESC`
     );
 
-    console.log(
-      `Found ${conversations.length} unique conversations to process`
+    logger.info(
+      "Found unique conversations to process",
+      "ADMIN",
+      { conversationCount: conversations.length }
     );
 
     // For each conversation, pick one email to trigger the conversation step
@@ -114,18 +131,28 @@ export async function reprocessAllConversations(formData: FormData) {
           processedCount++;
         }
       } catch (error) {
-        console.error(
-          `Failed to enqueue conversation ${conversation.conversation_id}:`,
-          error
+        logger.error(
+          "Failed to enqueue conversation processing",
+          "ADMIN",
+          { 
+            conversationId: conversation.conversation_id,
+            error: error instanceof Error ? error.message : String(error)
+          }
         );
       }
     }
 
-    console.log(
-      `Enqueued conversation processing for ${processedCount}/${conversations.length} conversations`
+    logger.info(
+      "Enqueued conversation processing",
+      "ADMIN",
+      { processedCount, totalConversations: conversations.length }
     );
   } catch (error) {
-    console.error("Failed to reprocess all conversations:", error);
+    logger.error(
+      "Failed to reprocess all conversations",
+      "ADMIN",
+      { error: error instanceof Error ? error.message : String(error) }
+    );
   }
 }
 
@@ -150,8 +177,10 @@ export async function runAllSummaries(formData: FormData) {
        ORDER BY MAX(received_at) DESC`
     );
 
-    console.log(
-      `Found ${conversations.length} unique conversations for summary processing`
+    logger.info(
+      "Found unique conversations for summary processing",
+      "ADMIN",
+      { conversationCount: conversations.length }
     );
 
     // For each conversation, pick one email to trigger the summary step
@@ -176,18 +205,28 @@ export async function runAllSummaries(formData: FormData) {
           processedCount++;
         }
       } catch (error) {
-        console.error(
-          `Failed to enqueue summary for conversation ${conversation.conversation_id}:`,
-          error
+        logger.error(
+          "Failed to enqueue summary processing",
+          "ADMIN",
+          { 
+            conversationId: conversation.conversation_id,
+            error: error instanceof Error ? error.message : String(error)
+          }
         );
       }
     }
 
-    console.log(
-      `Enqueued summary processing for ${processedCount}/${conversations.length} conversations`
+    logger.info(
+      "Enqueued summary processing",
+      "ADMIN",
+      { processedCount, totalConversations: conversations.length }
     );
   } catch (error) {
-    console.error("Failed to run all summaries:", error);
+    logger.error(
+      "Failed to run all summaries",
+      "ADMIN",
+      { error: error instanceof Error ? error.message : String(error) }
+    );
   }
 }
 

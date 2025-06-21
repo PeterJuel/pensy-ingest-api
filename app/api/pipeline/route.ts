@@ -6,6 +6,7 @@ import {
   runSpecificSteps,
   getPipelineStats,
 } from "../../../src/pipeline/runner";
+import logger from "../../../src/lib/logger";
 
 // GET /api/pipeline - Get pipeline information and statistics
 export async function GET(req: NextRequest) {
@@ -141,7 +142,11 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: "Invalid action" }, { status: 400 });
     }
   } catch (error) {
-    console.error("Pipeline API error:", error);
+    logger.error(
+      "Pipeline API error occurred",
+      "API",
+      { error: error instanceof Error ? error.message : String(error) }
+    );
     return NextResponse.json(
       { error: "Internal Server Error" },
       { status: 500 }
@@ -257,7 +262,14 @@ export async function POST(req: NextRequest) {
             await enqueueEmailProcess(id, { priority: 3 });
             retriedCount++;
           } catch (error) {
-            console.error(`Failed to retry email ${id}:`, error);
+            logger.error(
+              "Failed to retry email processing",
+              "API",
+              { 
+                emailId: id, 
+                error: error instanceof Error ? error.message : String(error) 
+              }
+            );
           }
         }
 
@@ -270,7 +282,11 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Invalid action" }, { status: 400 });
     }
   } catch (error) {
-    console.error("Pipeline operation error:", error);
+    logger.error(
+      "Pipeline operation error occurred",
+      "API",
+      { error: error instanceof Error ? error.message : String(error) }
+    );
     return NextResponse.json(
       { error: "Internal Server Error" },
       { status: 500 }
@@ -351,7 +367,11 @@ export async function DELETE(req: NextRequest) {
         return NextResponse.json({ error: "Invalid action" }, { status: 400 });
     }
   } catch (error) {
-    console.error("Pipeline cleanup error:", error);
+    logger.error(
+      "Pipeline cleanup error occurred",
+      "API",
+      { error: error instanceof Error ? error.message : String(error) }
+    );
     return NextResponse.json(
       { error: "Internal Server Error" },
       { status: 500 }

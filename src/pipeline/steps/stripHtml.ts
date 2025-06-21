@@ -1,6 +1,7 @@
 // src/pipeline/steps/stripHtml.ts - Updated for new interface
 import { parse, HTMLElement, TextNode, Node } from "node-html-parser";
 import { query } from "../../lib/db";
+import logger from "../../lib/logger";
 import { Email } from "../types";
 
 /**
@@ -62,7 +63,10 @@ function extractAttachments(email: Email): string[] {
       });
     }
   } catch (error) {
-    console.warn(`Failed to extract attachments for email ${email.id}:`, error);
+    logger.warn("Failed to extract attachments", "STRIP_HTML", { 
+      emailId: email.id, 
+      error: error instanceof Error ? error.message : String(error) 
+    });
   }
 
   return attachments;
@@ -85,9 +89,7 @@ export async function stripHtml(email: Email): Promise<void> {
     if (email.body?.content) {
       htmlContent = email.body.content;
     } else if ((email.body as any)?.body?.content) {
-      console.warn(
-        `[stripHtml] falling back to email.body.body.content for ${email.id}`
-      );
+      logger.warn("Falling back to email.body.body.content", "STRIP_HTML", { emailId: email.id });
       htmlContent = (email.body as any).body.content;
       contentSource = "body.body.content";
     }
@@ -154,12 +156,18 @@ export async function stripHtml(email: Email): Promise<void> {
       ]
     );
 
-    console.log(
-      `stripHtml completed for email ${email.id}: ${originalLength} -> ${finalLength} chars, ${attachments.length} attachments`
-    );
+    logger.info("stripHtml completed", "STRIP_HTML", {
+      emailId: email.id,
+      originalLength,
+      finalLength,
+      attachmentsCount: attachments.length
+    });
   } catch (error) {
     // Error logging is now handled by the orchestrator
-    console.error(`stripHtml failed for email ${email.id}:`, error);
+    logger.error("stripHtml failed", "STRIP_HTML", { 
+      emailId: email.id, 
+      error: error instanceof Error ? error.message : String(error) 
+    });
     throw error;
   }
 }

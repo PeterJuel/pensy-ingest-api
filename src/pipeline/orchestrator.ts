@@ -1,5 +1,6 @@
 // src/pipeline/orchestrator.ts
 import { query } from "../lib/db";
+import logger from "../lib/logger";
 import {
   PipelineStep,
   PipelineContext,
@@ -51,7 +52,7 @@ export class PipelineOrchestrator {
     requestedSteps?: string[],
     skipDependencies: boolean = false
   ): Promise<PipelineContext> {
-    console.log(`Starting pipeline execution for email ${emailId}`);
+    logger.info("Starting pipeline execution", "PIPELINE", { emailId });
 
     // Load email
     const email = await this.loadEmail(emailId);
@@ -79,7 +80,8 @@ export class PipelineOrchestrator {
       skipDependencies
     );
 
-    console.log(`Execution plan for ${emailId}:`, {
+    logger.info("Execution plan", "PIPELINE", {
+      emailId,
       totalSteps: plan.totalSteps,
       parallelGroups: plan.parallelGroups.length,
       requestedSteps: stepsToRun,
@@ -96,17 +98,20 @@ export class PipelineOrchestrator {
       // Mark as completed if all steps succeeded
       if (context.failedSteps.size === 0) {
         await this.updateProcessingStatus(emailId, "completed");
-        console.log(`Pipeline completed successfully for email ${emailId}`);
+        logger.info("Pipeline completed successfully", "PIPELINE", { emailId });
       } else {
         await this.updateProcessingStatus(emailId, "partial_failure");
-        console.log(
-          `Pipeline completed with failures for email ${emailId}:`,
-          Array.from(context.failedSteps)
-        );
+        logger.warn("Pipeline completed with failures", "PIPELINE", {
+          emailId,
+          failedSteps: Array.from(context.failedSteps)
+        });
       }
     } catch (error) {
       await this.updateProcessingStatus(emailId, "failed");
-      console.error(`Pipeline failed for email ${emailId}:`, error);
+      logger.error("Pipeline failed", "PIPELINE", { 
+        emailId, 
+        error: error instanceof Error ? error.message : String(error) 
+      });
       throw error;
     }
 
@@ -276,12 +281,12 @@ export class PipelineOrchestrator {
     ) {
       const group = plan.parallelGroups[groupIndex];
 
-      console.log(
-        `Executing parallel group ${groupIndex + 1}/${
-          plan.parallelGroups.length
-        } for email ${context.emailId}:`,
-        group
-      );
+      logger.info(`Executing parallel group ${groupIndex + 1}/${plan.parallelGroups.length}`, "PIPELINE", {
+        emailId: context.emailId,
+        groupIndex: groupIndex + 1,
+        totalGroups: plan.parallelGroups.length,
+        steps: group
+      });
 
       // Execute all steps in this group in parallel
       const groupPromises = group.map((stepName) =>
@@ -291,7 +296,10 @@ export class PipelineOrchestrator {
       try {
         await Promise.allSettled(groupPromises);
       } catch (error) {
-        console.error(`Error in parallel group execution:`, error);
+        logger.error("Error in parallel group execution", "PIPELINE", { 
+          error: error instanceof Error ? error.message : String(error),
+          groupIndex: groupIndex + 1
+        });
         // Continue to next group even if some steps fail
       }
 
@@ -320,7 +328,7 @@ export class PipelineOrchestrator {
     }
 
     const startTime = Date.now();
-    console.log(`Executing step: ${stepName} for email ${context.emailId}`);
+    logger.info("Executing step", "PIPELINE", { stepName, emailId: context.emailId });
 
     try {
       // Execute with timeout
@@ -359,7 +367,7 @@ export class PipelineOrchestrator {
         ]
       );
 
-      console.log(`Step completed: ${stepName} (${duration}ms)`);
+      logger.info("Step completed", "PIPELINE", { stepName, duration: `${duration}ms` });
     } catch (error) {
       const duration = Date.now() - startTime;
       const errorMessage =
@@ -392,13 +400,15 @@ export class PipelineOrchestrator {
         ]
       );
 
-      console.error(`Step failed: ${stepName} (${duration}ms):`, errorMessage);
+      logger.error("Step failed", "PIPELINE", { 
+        stepName, 
+        duration: `${duration}ms`, 
+        error: errorMessage 
+      });
 
       // Don't throw if step is marked as non-retryable or this is a dependency failure
       if (!step.retryable) {
-        console.log(
-          `Step ${stepName} marked as non-retryable, continuing pipeline`
-        );
+        logger.info("Step marked as non-retryable, continuing pipeline", "PIPELINE", { stepName });
       } else {
         throw error;
       }
@@ -438,7 +448,10 @@ export class PipelineOrchestrator {
       );
     } catch (error) {
       // Don't fail the pipeline if status update fails
-      console.warn(`Failed to update processing status for ${emailId}:`, error);
+      logger.warn("Failed to update processing status", "PIPELINE", { 
+        emailId, 
+        error: error instanceof Error ? error.message : String(error) 
+      });
     }
   }
 

@@ -3,6 +3,11 @@
  * @type {import('next').NextConfig}
  */
 const nextConfig = {
+  logging: {
+    fetches: {
+      fullUrl: true,
+    },
+  },
   webpack(config) {
     for (const rule of config.module.rules) {
       if (!rule.oneOf) continue;

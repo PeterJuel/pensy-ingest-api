@@ -1,6 +1,7 @@
 // src/lib/jobQueue.ts
 import PgBoss from "pg-boss";
 import { query as dbQuery } from "./db";
+import logger from "./logger";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -17,10 +18,10 @@ export async function getBoss(): Promise<PgBoss> {
     }
 
     boss = new PgBoss(connectionString);
-    boss.on("error", console.error);
+    boss.on("error", (error) => logger.error("pg-boss error", "QUEUE", { error: error.message }));
 
     await boss.start();
-    console.log("pg-boss started");
+    logger.info("pg-boss started", "QUEUE");
 
     // Create required queue with retry configuration
     await boss.createQueue(JOB_TYPES.PROCESS_EMAIL, {
@@ -68,19 +69,21 @@ export async function enqueueEmailProcess(
     requestedSteps: options.requestedSteps, // Include requested steps in job data
   };
 
-  console.log(`[ENQUEUE] About to send job:`, {
+  logger.debug("About to send job", "ENQUEUE", {
     type: JOB_TYPES.PROCESS_EMAIL,
     data: jobData,
     options: jobOptions,
   });
 
   const jobId = await boss.send(JOB_TYPES.PROCESS_EMAIL, jobData, jobOptions);
-  console.log(
-    `[ENQUEUE] Enqueued email processing job ${jobId} for email: ${emailId}${
+  logger.info(
+    `Enqueued email processing job ${jobId} for email: ${emailId}${
       options.requestedSteps
         ? ` (steps: ${options.requestedSteps.join(", ")})`
         : ""
-    }`
+    }`,
+    "ENQUEUE",
+    { jobId, emailId, requestedSteps: options.requestedSteps }
   );
 
   return jobId;
@@ -102,8 +105,10 @@ export async function startWorker() {
       // jobs will be an array of 1-20 jobs
       const jobArray = Array.isArray(jobs) ? jobs : [jobs];
 
-      console.log(
-        `[Worker ${process.pid}] Processing batch of ${jobArray.length} jobs`
+      logger.info(
+        `Processing batch of ${jobArray.length} jobs`,
+        "WORKER",
+        { batchSize: jobArray.length, pid: process.pid }
       );
 
       // Process all jobs in parallel using Promise.all
@@ -115,9 +120,10 @@ export async function startWorker() {
             typeof singleJob.data !== "object" ||
             !singleJob.data.emailId
           ) {
-            console.error(
-              `[Worker ${process.pid}] Invalid job data:`,
-              singleJob
+            logger.error(
+              "Invalid job data",
+              "WORKER",
+              { pid: process.pid, jobData: singleJob }
             );
             throw new Error(`Invalid job data: ${JSON.stringify(singleJob)}`);
           }
@@ -125,14 +131,19 @@ export async function startWorker() {
           const jobData = singleJob.data as EmailJobPayload;
           const { emailId } = jobData;
 
-          console.log(
-            `[Worker ${process.pid}] Processing email job ${
-              singleJob.id
-            }: ${emailId}${
+          logger.info(
+            `Processing email job ${singleJob.id}: ${emailId}${
               jobData.requestedSteps
                 ? ` (steps: ${jobData.requestedSteps.join(", ")})`
                 : ""
-            }`
+            }`,
+            "WORKER",
+            { 
+              pid: process.pid, 
+              jobId: singleJob.id, 
+              emailId, 
+              requestedSteps: jobData.requestedSteps 
+            }
           );
 
           try {
@@ -141,31 +152,41 @@ export async function startWorker() {
             // Pass the requested steps to the runner
             await runPipelineSteps(emailId, jobData.requestedSteps);
 
-            console.log(
-              `[Worker ${process.pid}] Email processing completed: ${emailId}${
+            logger.info(
+              `Email processing completed: ${emailId}${
                 jobData.requestedSteps
                   ? ` (steps: ${jobData.requestedSteps.join(", ")})`
                   : ""
-              }`
+              }`,
+              "WORKER",
+              { pid: process.pid, emailId, requestedSteps: jobData.requestedSteps }
             );
           } catch (error) {
-            console.error(
-              `[Worker ${process.pid}] Email processing failed: ${emailId}`,
-              error
+            logger.error(
+              `Email processing failed: ${emailId}`,
+              "WORKER",
+              { 
+                pid: process.pid, 
+                emailId, 
+                error: error instanceof Error ? error.message : String(error)
+              }
             );
             throw error; // pg-boss handles retries
           }
         })
       );
 
-      console.log(
-        `[Worker ${process.pid}] Batch of ${jobArray.length} jobs completed`
+      logger.info(
+        `Batch of ${jobArray.length} jobs completed`,
+        "WORKER",
+        { batchSize: jobArray.length, pid: process.pid }
       );
     }
   );
 
-  console.log(
-    "Workers started and listening for jobs with batch processing enabled"
+  logger.info(
+    "Workers started and listening for jobs with batch processing enabled",
+    "WORKER"
   );
 }
 
@@ -213,6 +234,6 @@ export async function cancelJob(jobId: string) {
 export async function stopWorker() {
   if (boss) {
     await boss.stop();
-    console.log("pg-boss stopped");
+    logger.info("pg-boss stopped", "QUEUE");
   }
 }

@@ -9,6 +9,7 @@ import {
   getPipelineStats,
 } from "../../../src/pipeline/runner";
 import { orchestrator } from "../../../src/pipeline/registry";
+import logger from "../../../src/lib/logger";
 
 /**
  * Server Action: re-run specific pipeline steps for this email
@@ -22,7 +23,11 @@ export async function reprocessSteps(formData: FormData) {
 
   // Only run if there are actually selected steps
   if (selectedSteps.length === 0) {
-    console.log(`No steps selected for reprocessing email ${emailId}`);
+    logger.info(
+      "No steps selected for reprocessing",
+      "ADMIN",
+      { emailId }
+    );
     return; // Don't run anything if no steps are selected
   }
 
@@ -34,13 +39,21 @@ export async function reprocessSteps(formData: FormData) {
       requestedSteps: selectedSteps,
     });
 
-    console.log(
-      `Enqueued specific steps [${selectedSteps.join(
-        ", "
-      )}] for email ${emailId}`
+    logger.info(
+      "Enqueued specific steps for reprocessing",
+      "ADMIN",
+      { emailId, selectedSteps }
     );
   } catch (error) {
-    console.error(`Failed to enqueue steps for ${emailId}:`, error);
+    logger.error(
+      "Failed to enqueue steps for reprocessing",
+      "ADMIN",
+      { 
+        emailId, 
+        selectedSteps,
+        error: error instanceof Error ? error.message : String(error)
+      }
+    );
 
     // Log the reprocessing attempt failure
     await query(
@@ -72,9 +85,20 @@ export async function reprocessAllSteps(formData: FormData) {
   try {
     // Re-run all steps via job queue with higher priority
     await enqueueEmailProcess(emailId, { priority: 5 });
-    console.log(`Enqueued all steps for reprocessing email ${emailId}`);
+    logger.info(
+      "Enqueued all steps for reprocessing",
+      "ADMIN",
+      { emailId }
+    );
   } catch (error) {
-    console.error(`Failed to enqueue all steps for ${emailId}:`, error);
+    logger.error(
+      "Failed to enqueue all steps for reprocessing",
+      "ADMIN",
+      { 
+        emailId,
+        error: error instanceof Error ? error.message : String(error)
+      }
+    );
   }
 }
 
@@ -96,9 +120,21 @@ export async function runSingleStep(formData: FormData) {
       requestedSteps: [stepName],
     });
 
-    console.log(`Enqueued step [${stepName}] for email ${emailId}`);
+    logger.info(
+      "Enqueued single step for processing",
+      "ADMIN",
+      { emailId, stepName }
+    );
   } catch (error) {
-    console.error(`Failed to enqueue step ${stepName} for ${emailId}:`, error);
+    logger.error(
+      "Failed to enqueue single step",
+      "ADMIN",
+      { 
+        emailId, 
+        stepName,
+        error: error instanceof Error ? error.message : String(error)
+      }
+    );
 
     // Log the reprocessing attempt failure
     await query(

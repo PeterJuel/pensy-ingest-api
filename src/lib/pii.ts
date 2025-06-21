@@ -63,7 +63,8 @@ export async function scrubHtml(html: string = ""): Promise<string> {
     await visit(root);
     return root.toString();
   } catch (error) {
-    console.error("HTML scrubbing error:", error);
+    // Let the error bubble up naturally without logging here
+    // Pipeline orchestrator will handle error logging
     // If HTML parsing fails, fall back to text-only scrubbing
     return await scrubText(html);
   }

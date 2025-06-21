@@ -1,5 +1,6 @@
 // src/pipeline/steps/conversation.ts
 import { query } from "../../lib/db";
+import logger from "../../lib/logger";
 import { Email } from "../types";
 
 interface ConversationEmail {
@@ -35,15 +36,14 @@ export async function conversation(email: Email): Promise<void> {
     const conversationId = email.conversation_id;
 
     if (!conversationId) {
-      console.warn(
-        `[conversation] Email ${email.id} has no conversation_id, skipping`
-      );
+      logger.warn("Email has no conversation_id, skipping", "CONVERSATION", { emailId: email.id });
       return;
     }
 
-    console.log(
-      `[conversation] Processing conversation ${conversationId} triggered by email ${email.id}`
-    );
+    logger.info("Processing conversation", "CONVERSATION", { 
+      conversationId, 
+      triggeredByEmailId: email.id 
+    });
 
     // Get all emails in this conversation with their plain text content
     const conversationEmails = await query<{
@@ -69,9 +69,7 @@ export async function conversation(email: Email): Promise<void> {
     );
 
     if (conversationEmails.length === 0) {
-      console.warn(
-        `[conversation] No emails found for conversation ${conversationId}`
-      );
+      logger.warn("No emails found for conversation", "CONVERSATION", { conversationId });
       return;
     }
 
@@ -148,11 +146,16 @@ export async function conversation(email: Email): Promise<void> {
       [conversationId, conversationContent, metadata, "v1"]
     );
 
-    console.log(
-      `[conversation] Completed conversation ${conversationId}: ${emails.length} emails, ${totalTextLength} chars total`
-    );
+    logger.info("Completed conversation", "CONVERSATION", {
+      conversationId,
+      emailCount: emails.length,
+      totalTextLength
+    });
   } catch (error) {
-    console.error(`[conversation] Failed for email ${email.id}:`, error);
+    logger.error("Failed to process conversation", "CONVERSATION", { 
+      emailId: email.id, 
+      error: error instanceof Error ? error.message : String(error) 
+    });
     throw error;
   }
 }

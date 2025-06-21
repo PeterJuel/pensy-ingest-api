@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import { query } from "@lib/db";
 import { enqueueEmailProcess } from "@lib/jobQueue";
 import { scrubText, scrubAddress, scrubHtml } from "@lib/pii";
+import logger from "../../src/lib/logger";
 
 export async function POST(req: NextRequest) {
   try {
@@ -92,13 +93,17 @@ export async function POST(req: NextRequest) {
       );
 
       inserted++;
-      console.log(
-        `[ROUTE DEBUG] About to call enqueueEmailProcess for email ID: ${row.id}`
+      logger.info(
+        "About to enqueue email for processing",
+        "INPOINT",
+        { emailId: row.id }
       );
 
       await enqueueEmailProcess(row.id);
-      console.log(
-        `[ROUTE DEBUG] enqueueEmailProcess call completed for email ID: ${row.id}`
+      logger.info(
+        "Email successfully enqueued for processing",
+        "INPOINT",
+        { emailId: row.id }
       );
 
       // Log success
@@ -120,7 +125,11 @@ export async function POST(req: NextRequest) {
       status: "queued",
     });
   } catch (err) {
-    console.error("Inpoint error", err);
+    logger.error(
+      "Inpoint processing failed",
+      "INPOINT",
+      { error: err instanceof Error ? err.message : String(err) }
+    );
     return NextResponse.json(
       { error: "Internal Server Error" },
       { status: 500 }
